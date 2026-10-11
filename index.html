@@ -64,7 +64,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.8 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.9 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -379,29 +379,10 @@ function buildCreature(prompt,seed){
   group.add(rig);
 
   /* body: displaced icosahedron */
-  const bg=new THREE.IcosahedronGeometry(bodyR,2);
-  const posA=bg.attributes.position;
-  for(let i=0;i<posA.count;i++){
-    _v1.fromBufferAttribute(posA,i);
-    const k=Math.sin(_v1.x/bodyR*E.fq[0]+E.s1)*Math.sin(_v1.y/bodyR*E.fq[1]+E.s2)*Math.sin(_v1.z/bodyR*E.fq[2]+E.s3);
-    const s=1+E.disp*k;
-    posA.setXYZ(i,_v1.x*s,_v1.y*s*0.92,_v1.z*s);
-  }
-  bg.computeVertexNormals();
-  /* limboverse-style: unlit vertex-colored facets. MeshStandardMaterial with
-     flatShading fails to compile on some mobile GPUs (the whole creature went
-     invisible on-device while portals rendered) — Basic + vertex colors is the
-     proven path (cf. limboverse's wisp). */
-  const bgNI=bg.toNonIndexed();
-  const bp=bgNI.attributes.position, vcol=new Float32Array(bp.count*3);
-  const cTmp=new THREE.Color();
-  for(let f=0;f<bp.count;f+=3){
-    cTmp.copy(col).multiplyScalar(0.82+rnd()*0.36); // per-face jitter = facets
-    for(let k=0;k<3;k++){vcol[(f+k)*3]=cTmp.r;vcol[(f+k)*3+1]=cTmp.g;vcol[(f+k)*3+2]=cTmp.b;}
-  }
-  bgNI.setAttribute('color',new THREE.BufferAttribute(vcol,3));
-  const bodyMat=new THREE.MeshBasicMaterial({vertexColors:true});
-  const body=new THREE.Mesh(bgNI,bodyMat);
+  /* v0.2.9: wisp-pattern body — stock SphereGeometry + plain BasicMaterial.
+     (Custom displaced/non-indexed geometry would not rasterize on-device.) */
+  const bodyMat=new THREE.MeshBasicMaterial({color:col});
+  const body=new THREE.Mesh(new THREE.SphereGeometry(bodyR,28,20),bodyMat);
   rig.add(body);
 
   /* spikes on a fibonacci sphere, kept off the face (+Z) */
@@ -491,9 +472,9 @@ function buildCreature(prompt,seed){
     const pulse=1+0.045*Math.sin(t*(P.mood==='flicker'?9:2.2)+P.phase)+P.flicker*0.04*Math.sin(t*13+P.phase*2);
     rig.position.y=bobY;
     rig.scale.set(pulse,1-(pulse-1)*0.7,pulse);
-    /* flicker mood: brightness shimmer (unlit material — pulse the color multiplier) */
+    /* flicker mood: brightness shimmer */
     const shimmer=P.mood==='flicker'?0.72+0.5*Math.abs(Math.sin(t*11+P.phase*3)):0.9+0.1*Math.sin(t*2.4+P.phase);
-    bodyMat.color.setScalar(shimmer);
+    bodyMat.color.copy(col).multiplyScalar(shimmer);
     /* blink */
     blink.t-=dt;
     if(blink.t<0){blink.phase=0.22;blink.t=2.4+rnd()*3.5;}
