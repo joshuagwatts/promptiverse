@@ -90,14 +90,22 @@ the same portal lands in the same room with zero coordination. The hub itself is
 
 ## Build order
 
-- **v0.1** — Hub scene + promptable avatar (spawn flow) + paste pedestal + portal
-  ring + per-portal rooms; fly-through opens the world in a new tab (warm hub
-  underneath).
-- **v0.2** — The Dive: in-place iframe layer + floating back button + identity
-  params (name, color, avatar seed).
-- **v0.3** — Registry in the URL hash (textable hubs) + personal collection in
+- **v0.1** — SHIPPED 2026-10-10/11 (2D canvas hub — superseded).
+- **v0.2** — IN BUILD (his 2026-10-11 feedback: "crazy but needs to be 3d and the
+  avatar should be more than just stars"): three.js 3D hub (vendored, TAGTOWN-style)
+  + real 3D generative creature avatars — bodies with volume, spikes/fins, eyes,
+  readable silhouettes, not glow blobs. Deterministic prompt+seed so peers render
+  each other identically.
+- **v0.3** — The Dive: in-place iframe layer + floating back button + identity
+  params (name, color, avatar seed). THIS is the togetherness fix: the session never
+  breaks at the portal, and portal rooms (`"pv-" + hash(worldUrl)`) put everyone who
+  flew through the same portal in the same instance automatically. Our worlds
+  (limboverse, tagtown, promptiverse worlds) will read the `?pv_*` params and
+  auto-join their portal room; third-party worlds that don't speak the protocol get
+  the warm-hub + one-tap-return fallback.
+- **v0.4** — Registry in the URL hash (textable hubs) + personal collection in
   localStorage + homeworlds (your front door + the hub's home ring).
-- **v0.4** — Prompt pedestal: seeded world generator + `world.html`.
+- **v0.5** — Prompt pedestal: seeded world generator + `world.html`.
 
 ## Open questions for Joshua
 
