@@ -61,7 +61,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.2 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.3 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -895,6 +895,29 @@ window.__pv={
     return out;
   },
 };
+
+/* ?debug readout — live numbers for remote diagnosis (not shown normally) */
+if(/[\?&]debug\b/.test(location.search)){
+  const dd=document.createElement('div');
+  dd.style.cssText='position:fixed;left:8px;top:44px;z-index:99;font:10px/1.5 monospace;color:#7CFF9B;background:rgba(0,0,0,.65);padding:6px 8px;border-radius:8px;pointer-events:none;white-space:pre;';
+  dd.textContent='debug…';
+  document.body.appendChild(dd);
+  let lastF=-1,lastT=performance.now();
+  setInterval(()=>{
+    const f=window.__pv.frames();
+    const now=performance.now();
+    const fps=lastF<0?0:Math.round((f-lastF)/Math.max(1,now-lastT)*1000);
+    lastF=f;lastT=now;
+    let s='fps~'+fps+' frame '+f;
+    try{
+      const d=window.__pv.debugCam();
+      s+='\nplayer '+d.player+' cam '+d.cam;
+      s+='\nfov '+d.fov.toFixed(0)+' asp '+d.aspect.toFixed(2);
+      s+='\ncreat '+(d.creatureWorld?d.creatureWorld:'NONE')+' ndc '+d.creatureNDC;
+    }catch(e){s+='\nerr '+String(e.message).slice(0,80);}
+    dd.textContent=s;
+  },600);
+}
 </script>
 </body>
 </html>
