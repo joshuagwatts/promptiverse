@@ -61,7 +61,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.3 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.4 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -878,6 +878,15 @@ window.__pv={
         mat:o.material?o.material.type:'?',inScene:!!o.parent});}
   });return a;},
   frames:()=>frameNo,
+  sceneInfo:()=>{
+    let meshes=0,vis=0;
+    scene.traverse(o=>{if(o.isMesh||o.isSprite){meshes++;if(o.visible)vis++;}});
+    const cg=player.creature?player.creature.group:null;
+    let inScene=null,worldOk=null;
+    if(cg){inScene=false;let o=cg;while(o){if(o===scene){inScene=true;break;}o=o.parent;}}
+    return {children:scene.children.length,meshes:meshes,visMeshes:vis,inScene:inScene,
+      calls:renderer.info.render.calls,tris:renderer.info.render.triangles};
+  },
   snap:()=>{renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');},
   debugCam:()=>{
     const out={fov:camera.fov,aspect:camera.aspect,
@@ -914,6 +923,11 @@ if(/[\?&]debug\b/.test(location.search)){
       s+='\nplayer '+d.player+' cam '+d.cam;
       s+='\nfov '+d.fov.toFixed(0)+' asp '+d.aspect.toFixed(2);
       s+='\ncreat '+(d.creatureWorld?d.creatureWorld:'NONE')+' ndc '+d.creatureNDC;
+      try{
+        const si=window.__pv.sceneInfo();
+        s+='\nscene kids '+si.children+' mesh '+si.meshes+'/'+si.visMeshes+' inScene '+si.inScene;
+        s+='\ndraws '+si.calls+' tris '+si.tris;
+      }catch(e2){s+='\nsceneInfo err';}
     }catch(e){s+='\nerr '+String(e.message).slice(0,80);}
     dd.textContent=s;
   },600);
