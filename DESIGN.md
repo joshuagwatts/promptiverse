@@ -91,11 +91,20 @@ the same portal lands in the same room with zero coordination. The hub itself is
 ## Build order
 
 - **v0.1** — SHIPPED 2026-10-10/11 (2D canvas hub — superseded).
-- **v0.2** — IN BUILD (his 2026-10-11 feedback: "crazy but needs to be 3d and the
+- **v0.2** — SHIPPED 2026-10-11 (his feedback: "crazy but needs to be 3d and the
   avatar should be more than just stars"): three.js 3D hub (vendored, TAGTOWN-style)
   + real 3D generative creature avatars — bodies with volume, spikes/fins, eyes,
   readable silhouettes, not glow blobs. Deterministic prompt+seed so peers render
   each other identically.
+- **v0.2.1** — SHIPPED 2026-10-11 (commit a32f3732, hotfix for his "UI is too zoomed in"
+  phone report): aspect-responsive camera framing — portrait aspects get a pulled-back
+  (up to 2.5x), wider-FOV (58°→76°) follow camera + scaled pre-identity orbit so the
+  world reads the same as desktop; desktop framing (aspect ≥ 1.35) untouched. HUD
+  bumped to v0.2.1 so the fix is verifiable on-device. Verified: 390x844 screenshots
+  correctly framed, desktop 1280x800 pixel-identical to v0.2, 14/14 desktop suite pass.
+  Test-rig lesson: page.screenshot() races swiftshader's slow compositor and captures
+  stale frames — the rig now uses in-page synchronous snap() (renderer.render +
+  toDataURL in one evaluate) and waits for real rAF frames via a frameNo counter.
 - **v0.3** — The Dive: in-place iframe layer + floating back button + identity
   params (name, color, avatar seed). THIS is the togetherness fix: the session never
   breaks at the portal, and portal rooms (`"pv-" + hash(worldUrl)`) put everyone who
