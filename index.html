@@ -467,6 +467,7 @@ function buildCreature(prompt,seed){
   const blink={t:2+rnd()*3,phase:0};
 
   function update(t,dt,worldPos){
+    if(worldPos)group.position.copy(worldPos); // the group does NOT auto-track — sync it every frame
     /* mood motion */
     let bobY=0;
     if(P.mood==='bob'){bobY=Math.sin(t*1.6+P.phase)*1.6;}
