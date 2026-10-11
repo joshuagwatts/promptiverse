@@ -61,7 +61,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.1 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -270,6 +270,22 @@ function resize(){
   const W=window.innerWidth,H=window.innerHeight;
   renderer.setSize(W,H,false);
   camera.aspect=W/H;camera.updateProjectionMatrix();
+  updateFrame();
+}
+/* aspect-responsive framing (v0.2.1): the v0.2 camera was tuned on a
+   1280x800 desktop — on a tall phone screen the fixed 58° vertical FOV
+   collapses the horizontal view to ~29° and everything blows up.
+   Portrait aspects get a pulled-back, wider camera so the world reads
+   the same as desktop. Desktop framing (aspect >= 1.35) is untouched. */
+const camFrame={mul:1,back:78,h:46};
+function updateFrame(){
+  const a=camera.aspect;
+  const t=clamp((1.35-a)/0.95,0,1); // 0 → desktop, →1 → phone portrait
+  camFrame.mul=1+1.5*t;
+  camFrame.back=78*camFrame.mul;
+  camFrame.h=46*(1+1.1*t);
+  const f=58+18*t;
+  if(Math.abs(camera.fov-f)>0.01){camera.fov=f;camera.updateProjectionMatrix();}
 }
 window.addEventListener('resize',resize);resize();
 canvas.oncontextmenu=e=>e.preventDefault();
@@ -606,7 +622,7 @@ function updatePlayer(dt){
   }
 }
 function updateCamera(dt){
-  _v1.set(player.x-camDir.x*78,46,player.z-camDir.z*78);
+  _v1.set(player.x-camDir.x*camFrame.back,camFrame.h,player.z-camDir.z*camFrame.back);
   camera.position.lerp(_v1,Math.min(1,dt*3.6));
   _v2.set(player.x,5,player.z);
   camera.lookAt(_v2);
@@ -771,7 +787,9 @@ $('#pUrl').addEventListener('keydown',e=>{if(e.key==='Enter')submitPortal();});
 /* ================= main loop ================= */
 const _wv=new THREE.Vector3();
 let lastT=performance.now();
+let frameNo=0;
 function frame(){
+  frameNo++;
   const now=performance.now();
   const dt=clamp((now-lastT)/1000,0,0.05);lastT=now;
   const t=now/1000;
@@ -802,8 +820,8 @@ function frame(){
     }
   }else{
     /* pre-identity: slow orbit around the hub */
-    const a=t*0.08;
-    camera.position.set(Math.cos(a)*260,120,Math.sin(a)*260);
+    const a=t*0.08,m=camFrame.mul;
+    camera.position.set(Math.cos(a)*260*m,120*m,Math.sin(a)*260*m);
     camera.lookAt(0,10,0);
   }
   /* peers */
@@ -825,7 +843,7 @@ function frame(){
 /* ================= boot ================= */
 loadPortals();
 layoutPortalMeshes();
-camera.position.set(0,120,420);
+camera.position.set(0,120*camFrame.mul,420*camFrame.mul);
 (function(){
   const saved=loadIdentity();
   if(saved){
@@ -852,6 +870,29 @@ window.__pv={
   avatarParams,
   creatureAt:(i)=>{const ps=portals[i];return ps?{px:ps.px,pz:ps.pz}:null;},
   faceCamera:()=>{player.heading=Math.atan2(-camDir.x,-camDir.z);},
+  cullOff:()=>{if(player.creature)player.creature.group.traverse(o=>{o.frustumCulled=false;});},
+  cullInfo:()=>{const a=[];if(player.creature)player.creature.group.traverse(o=>{
+    if(o.isMesh){const bs=o.geometry.boundingSphere;
+      a.push({vis:o.visible,fc:o.frustumCulled,bsR:bs?+bs.radius.toFixed(1):null,
+        mat:o.material?o.material.type:'?',inScene:!!o.parent});}
+  });return a;},
+  frames:()=>frameNo,
+  snap:()=>{renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');},
+  debugCam:()=>{
+    const out={fov:camera.fov,aspect:camera.aspect,
+      cam:[camera.position.x,camera.position.y,camera.position.z].map(v=>+v.toFixed(1)),
+      player:[+player.x.toFixed(1),+player.z.toFixed(1)],
+      frame:{...camFrame}};
+    if(player.creature){
+      const p=new THREE.Vector3();player.creature.group.getWorldPosition(p);
+      out.creatureWorld=[+p.x.toFixed(1),+p.y.toFixed(1),+p.z.toFixed(1)];
+      const ndc=p.clone().project(camera);
+      out.creatureNDC=[+ndc.x.toFixed(2),+ndc.y.toFixed(2),+ndc.z.toFixed(2)];
+      out.tagY=+(player.tag?player.tag.position.y.toFixed(1):-1);
+      out.tagScale=player.tag?player.tag.scale.x.toFixed(1):-1;
+    }
+    return out;
+  },
 };
 </script>
 </body>
