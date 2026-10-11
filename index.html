@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>promptiverse — the hub</title>
+<style>
+  :root{
+    --bg:#05060f; --panel:rgba(12,14,28,.92); --line:rgba(140,160,255,.22);
+    --txt:#e8ecff; --dim:#9aa3c7; --acc:#7c8cff; --acc2:#b48cff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);
+    color:var(--txt);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  #scene{position:fixed;inset:0;display:block;touch-action:none;}
+  .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(4,5,12,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    z-index:20;padding:18px;}
+  .overlay.hidden{display:none;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    padding:26px 24px;max-width:420px;width:100%;box-shadow:0 20px 80px rgba(0,0,0,.6);}
+  .card h1{margin:0 0 4px;font-size:26px;letter-spacing:.5px;
+    background:linear-gradient(90deg,#9db4ff,#d3a6ff);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .card p.sub{margin:0 0 18px;color:var(--dim);font-size:13.5px;line-height:1.5;}
+  label{display:block;font-size:12px;color:var(--dim);margin:14px 0 6px;letter-spacing:.4px;text-transform:uppercase;}
+  input[type=text]{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--txt);font-size:16px;outline:none;}
+  input[type=text]:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(124,140,255,.18);}
+  .btn{display:inline-block;border:0;border-radius:12px;padding:13px 18px;font-size:15px;font-weight:650;
+    cursor:pointer;color:#0a0c18;background:linear-gradient(135deg,var(--acc),var(--acc2));width:100%;margin-top:18px;}
+  .btn:active{transform:scale(.98);}
+  .btn.ghost{background:rgba(255,255,255,.07);color:var(--txt);border:1px solid var(--line);width:auto;margin-top:10px;padding:10px 16px;font-size:14px;}
+  .row{display:flex;gap:10px;align-items:center;}
+  #previewWrap{display:flex;justify-content:center;margin:16px 0 4px;}
+  #avatarPreview{width:150px;height:150px;border-radius:50%;border:1px solid var(--line);background:radial-gradient(circle,#0b0e20,#05060f);}
+  #hud{position:fixed;top:12px;left:14px;z-index:10;font-family:ui-monospace,Menlo,monospace;
+    font-size:12px;color:var(--dim);pointer-events:none;text-shadow:0 1px 4px #000;}
+  #hud b{color:var(--txt);font-weight:600;}
+  #netpill{position:fixed;top:12px;right:14px;z-index:10;font-family:ui-monospace,Menlo,monospace;
+    font-size:12px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);
+    background:rgba(10,12,24,.7);color:var(--dim);}
+  #netpill.online{color:#8fe3a8;border-color:rgba(120,230,150,.35);}
+  #addPortalBtn{position:fixed;right:18px;bottom:22px;z-index:10;width:58px;height:58px;border-radius:50%;
+    border:1px solid var(--line);background:linear-gradient(135deg,var(--acc),var(--acc2));
+    color:#0a0c18;font-size:30px;font-weight:700;cursor:pointer;box-shadow:0 8px 30px rgba(124,140,255,.35);}
+  #addPortalBtn:active{transform:scale(.94);}
+  #changeId{position:fixed;left:14px;bottom:16px;z-index:10;font-size:12px;color:var(--dim);
+    background:none;border:0;text-decoration:underline;cursor:pointer;font-family:inherit;}
+  #toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);z-index:30;
+    background:rgba(14,16,32,.95);border:1px solid var(--line);color:var(--txt);
+    padding:12px 20px;border-radius:14px;font-size:14px;opacity:0;pointer-events:none;
+    transition:opacity .3s,transform .3s;max-width:86vw;text-align:center;}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .hint{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9;font-size:12px;color:var(--dim);
+    font-family:ui-monospace,Menlo,monospace;pointer-events:none;text-shadow:0 1px 4px #000;white-space:nowrap;}
+  @media (max-width:520px){ .hint{display:none;} .card{padding:22px 18px;} }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="hud"><b>promptiverse</b> v0.1 · <span id="peerCount">0</span> here</div>
+<div id="netpill">● solo</div>
+<div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
+<button id="addPortalBtn" title="add a portal">+</button>
+<button id="changeId">change identity</button>
+<div id="toast"></div>
+
+<div id="spawn" class="overlay">
+  <div class="card">
+    <h1>promptiverse</h1>
+    <p class="sub">A hub of worlds. Paste a link, it becomes a portal. Fly through one and you're there — your creature travels with you.</p>
+    <label for="nameInput">your name</label>
+    <input id="nameInput" type="text" maxlength="24" placeholder="wanderer" autocomplete="off">
+    <label for="promptInput">describe your creature</label>
+    <input id="promptInput" type="text" maxlength="60" placeholder="ember fox" autocomplete="off">
+    <div id="previewWrap"><canvas id="avatarPreview" width="300" height="300"></canvas></div>
+    <div class="row" style="justify-content:center">
+      <button id="genBtn" class="btn ghost">✦ generate</button>
+      <button id="remixBtn" class="btn ghost">🎲 remix</button>
+    </div>
+    <button id="enterBtn" class="btn" disabled>enter the verse →</button>
+  </div>
+</div>
+
+<div id="portalModal" class="overlay hidden">
+  <div class="card">
+    <h1 style="font-size:20px">new portal</h1>
+    <p class="sub">Paste any link. It becomes a ring in the hub — anyone who flies through it lands in that world.</p>
+    <label for="pTitle">title</label>
+    <input id="pTitle" type="text" maxlength="40" placeholder="limboverse" autocomplete="off">
+    <label for="pUrl">url</label>
+    <input id="pUrl" type="text" inputmode="url" placeholder="https://…" autocomplete="off">
+    <button id="pAddBtn" class="btn">open the portal ✦</button>
+    <div class="row" style="justify-content:center"><button id="pCancelBtn" class="btn ghost">cancel</button></div>
+  </div>
+</div>
+
+<script type="module">
+'use strict';
+/* =====================================================================
+   PROMPTIVERSE v0.1 — the hub.
+   Single file. Canvas 2D. Serverless P2P presence via Trystero (esm.sh,
+   pinned — never unpkg). Everything degrades to solo offline.
+
+   Portal room protocol (for the v0.2 Dive): peers inside the same world
+   share room id  "pv-" + hash(worldUrl).  Everyone through the same
+   portal lands in the same room with zero coordination. v0.1 joins only
+   the hub room ("pv-hub"); portal rooms activate with in-place diving.
+   ===================================================================== */
+const $=s=>document.querySelector(s);
+const TAU=Math.PI*2;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+/* ---------------- deterministic hashing / rng ---------------- */
+function xmur3(str){
+  let h=1779033703^str.length;
+  for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}
+  return function(){h=Math.imul(h^h>>>16,2246822507);h=Math.imul(h^h>>>13,3266489909);return (h^=h>>>16)>>>0;};
+}
+function mulberry32(a){
+  return function(){let t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return ((t^t>>>14)>>>0)/4294967296;};
+}
+const hashStr=s=>xmur3(String(s))();
+
+/* ---------------- avatar engine ----------------
+   Deterministic: same prompt + seed renders identically everywhere.
+   The prompt steers palette/mood via keywords; the seed fills the rest.
+   v1 = abstract generative creature, never a literal depiction. */
+const COLOR_WORDS=[['crimson',4],['blood',4],['red',4],['ember',20],['lava',14],['fire',16],
+  ['orange',28],['gold',46],['honey',44],['yellow',54],['lime',95],['green',130],['mint',160],
+  ['teal',172],['ocean',206],['sea',200],['blue',216],['sky',202],['indigo',240],['violet',272],
+  ['purple',282],['magenta',308],['pink',322],['rose',340],['sand',40],['storm',220],['frost',190],['ice',195]];
+const DARK_WORDS=['void','shadow','abyss','night','dark','obsidian','coal'];
+const LIGHT_WORDS=['ghost','pearl','moon','milk','snow','white'];
+const MOOD_WORDS=[
+  {w:['fire','ember','blaze','lava','inferno','flame','spark'],mood:'flicker'},
+  {w:['ocean','sea','glass','calm','sleep','dream','slow','drift'],mood:'bob'},
+  {w:['storm','wild','chaos','rage','frenzy','electric','static'],mood:'jitter'},
+];
+function avatarParams(prompt,seed){
+  const p=(''+(prompt||'wisp')).toLowerCase().trim()||'wisp';
+  const rnd=mulberry32((xmur3(p)()^(seed>>>0))>>>0);
+  let hue=Math.floor(rnd()*360),sat=72,light=60;
+  for(const [w,h] of COLOR_WORDS){ if(p.includes(w)){hue=h+Math.floor(rnd()*24)-12;break;} }
+  if(DARK_WORDS.some(w=>p.includes(w))){sat=30;light=20+Math.floor(rnd()*12);}
+  else if(LIGHT_WORDS.some(w=>p.includes(w))){sat=16;light=80+Math.floor(rnd()*12);}
+  let mood='pulse';
+  for(const m of MOOD_WORDS){ if(m.w.some(w=>p.includes(w))){mood=m.mood;break;} }
+  return {
+    hue:((hue%360)+360)%360,sat,light,
+    bodyR:16+Math.floor(rnd()*15),
+    spikes:Math.floor(rnd()*11),
+    spikeLen:10+Math.floor(rnd()*24),
+    spikeHueJit:Math.floor(rnd()*44)-22,
+    glow:0.35+rnd()*0.6,
+    trail:0.25+rnd()*0.7,
+    eyes:1+Math.floor(rnd()*3),
+    eyeStyle:['round','wide','sleepy'][Math.floor(rnd()*3)],
+    mood,phase:rnd()*TAU,
+    flicker:mood==='flicker'?0.9:(mood==='jitter'?0.55:0.15),
+  };
+}
+function drawAvatar(ctx,P,x,y,s,t,alpha){
+  ctx.save();
+  ctx.globalAlpha=alpha==null?1:alpha;
+  ctx.translate(x,y);ctx.scale(s,s);
+  let bobY=0;
+  if(P.mood==='bob')bobY=Math.sin(t*1.6+P.phase)*4;
+  else if(P.mood==='pulse')bobY=Math.sin(t*3+P.phase)*1.6;
+  else if(P.mood==='jitter')bobY=Math.sin(t*31+P.phase)*2.2;
+  const R=P.bodyR*(1+0.05*Math.sin(t*(P.mood==='flicker'?9:2.2)+P.phase)+P.flicker*0.045*Math.sin(t*13+P.phase*2));
+  ctx.translate(0,bobY);
+  const col='hsl('+P.hue+','+P.sat+'%,'+P.light+'%)';
+  const g=ctx.createRadialGradient(0,0,R*0.4,0,0,R*3.4);
+  g.addColorStop(0,'hsla('+P.hue+','+P.sat+'%,'+P.light+'%,'+(0.38*P.glow).toFixed(3)+')');
+  g.addColorStop(1,'hsla(0,0%,0%,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,R*3.4,0,TAU);ctx.fill();
+  if(P.spikes>0){
+    ctx.fillStyle='hsl('+(P.hue+P.spikeHueJit)+','+P.sat+'%,'+Math.max(12,P.light-14)+'%)';
+    for(let i=0;i<P.spikes;i++){
+      const a=(i/P.spikes)*TAU+P.phase*0.3;
+      const len=P.spikeLen*(0.7+0.6*Math.abs(Math.sin(t*2+i*1.7)));
+      ctx.save();ctx.rotate(a);
+      ctx.beginPath();ctx.moveTo(R*0.85,-R*0.3);ctx.lineTo(R+len,0);ctx.lineTo(R*0.85,R*0.3);
+      ctx.closePath();ctx.fill();ctx.restore();
+    }
+  }
+  const bg=ctx.createRadialGradient(-R*0.3,-R*0.3,R*0.2,0,0,R);
+  bg.addColorStop(0,'hsl('+P.hue+','+Math.min(100,P.sat+10)+'%,'+Math.min(92,P.light+22)+'%)');
+  bg.addColorStop(0.55,col);
+  bg.addColorStop(1,'hsl('+P.hue+','+P.sat+'%,'+Math.max(8,P.light-30)+'%)');
+  ctx.fillStyle=bg;ctx.beginPath();ctx.arc(0,0,R,0,TAU);ctx.fill();
+  const n=P.eyes,spread=R*0.44;
+  for(let i=0;i<n;i++){
+    const ex=(i-(n-1)/2)*spread,ey=-R*0.1;
+    const er=P.eyeStyle==='wide'?R*0.22:(P.eyeStyle==='sleepy'?R*0.15:R*0.18);
+    ctx.fillStyle='rgba(255,255,255,.95)';
+    ctx.beginPath();
+    if(P.eyeStyle==='sleepy')ctx.ellipse(ex,ey,er,er*0.45,0,0,TAU);
+    else ctx.arc(ex,ey,er,0,TAU);
+    ctx.fill();
+    ctx.fillStyle='hsl('+P.hue+',60%,12%)';
+    ctx.beginPath();ctx.arc(ex,ey,er*0.45,0,TAU);ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* ---------------- identity ---------------- */
+const ID_KEY='pv.identity';
+let me={name:'',ap:'',as:0};
+let myParams=null;
+function loadIdentity(){
+  try{const r=localStorage.getItem(ID_KEY);if(r){const o=JSON.parse(r);if(o&&o.name&&o.as!=null)return o;}}catch(e){}
+  return null;
+}
+function saveIdentity(){try{localStorage.setItem(ID_KEY,JSON.stringify(me));}catch(e){}}
+
+/* ---------------- portals ---------------- */
+const PORTAL_KEY='pv.portals.v1';
+let portals=[];
+function loadPortals(){
+  try{const r=localStorage.getItem(PORTAL_KEY);if(r){portals=JSON.parse(r)||[];}}catch(e){portals=[];}
+  if(!portals.length){
+    // First run: seed with two of Joshua's own worlds so the hub isn't empty.
+    const now=Date.now();
+    portals=[
+      {id:'seed-limbo',title:'limboverse',url:'https://joshuagwatts.github.io/limboverse/',by:'joshua',addedAt:now,born:performance.now()},
+      {id:'seed-tag',title:'tagtown',url:'https://joshuagwatts.github.io/tagtown/',by:'joshua',addedAt:now,born:performance.now()},
+    ];
+    savePortals();
+  }
+  layoutPortals();
+}
+function savePortals(){try{localStorage.setItem(PORTAL_KEY,JSON.stringify(portals));}catch(e){}}
+function layoutPortals(){
+  const n=portals.length,R=Math.max(430,n*88);
+  portals.forEach((p,i)=>{const a=(i/Math.max(1,n))*TAU-Math.PI/2;p.px=Math.cos(a)*R;p.py=Math.sin(a)*R;});
+}
+function addPortal(title,url,by){
+  title=String(title||'').trim().slice(0,40)||'untitled world';
+  url=String(url||'').trim();
+  if(!/^https?:\/\/[^\/\s]+\.[^\/\s]+/i.test(url))throw new Error('that doesn\'t look like a link — needs http(s)://');
+  const p={id:'p'+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36),
+    title,url,by:String(by||'anon').slice(0,24),addedAt:Date.now(),born:performance.now()};
+  portals.push(p);savePortals();layoutPortals();
+  toast('✦ portal opened: '+title);
+  return p;
+}
+const diveCooldown=new Map();
+function tryDive(p,now){
+  const last=diveCooldown.get(p.id)||0;
+  if(now-last<6000)return;
+  diveCooldown.set(p.id,now);
+  const sep=p.url.includes('?')?'&':'?';
+  const target=p.url+sep+'pv_name='+encodeURIComponent(me.name||'wanderer')
+    +'&pv_ap='+encodeURIComponent(me.ap||'wisp')
+    +'&pv_avatar='+(me.as>>>0);
+  window.open(target,'_blank');
+  toast('diving into “'+p.title+'” — the hub stays warm');
+}
+function easeOutBack(x){const c=1.70158;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2);}
+
+/* ---------------- toast ---------------- */
+let toastTimer=null;
+function toast(msg,ms){
+  const el=$('#toast');el.textContent=msg;el.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),ms||2600);
+}
+
+/* ---------------- canvas / world ---------------- */
+const canvas=$('#scene'),ctx=canvas.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+canvas.oncontextmenu=e=>e.preventDefault();
+
+const cam={x:0,y:0};
+const player={x:0,y:300,vx:0,vy:0,trail:[]};
+const keys={};
+window.addEventListener('keydown',e=>{
+  const tag=(e.target&&e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea')return; // don't steal typing
+  const k=e.key.toLowerCase();keys[k]=true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
+});
+window.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+let touchVec=null;
+(function(){
+  let sid=null,sx=0,sy=0;
+  canvas.addEventListener('touchstart',e=>{const t=e.changedTouches[0];sid=t.identifier;sx=t.clientX;sy=t.clientY;touchVec={x:0,y:0};e.preventDefault();},{passive:false});
+  canvas.addEventListener('touchmove',e=>{
+    for(const t of e.changedTouches){if(t.identifier===sid){
+      touchVec={x:clamp((t.clientX-sx)/70,-1,1),y:clamp((t.clientY-sy)/70,-1,1)};}}
+    e.preventDefault();
+  },{passive:false});
+  const end=e=>{for(const t of e.changedTouches){if(t.identifier===sid){sid=null;touchVec=null;}}};
+  canvas.addEventListener('touchend',end);canvas.addEventListener('touchcancel',end);
+})();
+
+/* starfield (screen-wrapped parallax) + nebulae (world-fixed) */
+const stars=[];{const r=mulberry32(1234);for(let i=0;i<240;i++)stars.push({x:r(),y:r(),r:0.4+r()*1.6,tw:r()*TAU,par:0.15+r()*0.55});}
+const nebulae=[];{const r=mulberry32(99);
+  const hues=[225,265,195,300,210];
+  for(let i=0;i<6;i++)nebulae.push({x:(r()-0.5)*2600,y:(r()-0.5)*2600,r:380+r()*420,hue:hues[i%hues.length],a:0.05+r()*0.05});}
+
+function updatePlayer(dt){
+  let ax=0,ay=0;
+  if(keys['a']||keys['arrowleft'])ax-=1;
+  if(keys['d']||keys['arrowright'])ax+=1;
+  if(keys['w']||keys['arrowup'])ay-=1;
+  if(keys['s']||keys['arrowdown'])ay+=1;
+  if(touchVec&&(Math.abs(touchVec.x)>0.12||Math.abs(touchVec.y)>0.12)){ax+=touchVec.x;ay+=touchVec.y;}
+  const m=Math.hypot(ax,ay);
+  if(m>0.01){ax/=Math.max(1,m);ay/=Math.max(1,m);player.vx+=ax*950*dt;player.vy+=ay*950*dt;}
+  const damp=Math.pow(0.06,dt);
+  player.vx*=damp;player.vy*=damp;
+  const sp=Math.hypot(player.vx,player.vy),MAX=320;
+  if(sp>MAX){player.vx*=MAX/sp;player.vy*=MAX/sp;}
+  player.x+=player.vx*dt;player.y+=player.vy*dt;
+  player.trail.push({x:player.x,y:player.y,a:1});
+  if(player.trail.length>46)player.trail.shift();
+  for(const q of player.trail)q.a-=dt*1.6;
+  cam.x+=(player.x-cam.x)*Math.min(1,dt*4.2);
+  cam.y+=(player.y-cam.y)*Math.min(1,dt*4.2);
+}
+
+/* ---------------- presence (Trystero, serverless) ---------------- */
+const ROOM_HUB='pv-hub';
+const cid='c'+Math.random().toString(36).slice(2,9)+Date.now().toString(36);
+const peers=new Map(); // cid -> {pids:Set,n,ap,as,x,y,last,params,key}
+const net={up:false,sendFns:[]};
+function setNetStatus(mode){
+  const el=$('#netpill');
+  if(mode==='online'){el.textContent='● online';el.classList.add('online');}
+  else{el.textContent='● solo';el.classList.remove('online');}
+}
+function onPose(d,pid){
+  if(!d||typeof d!=='object')return;
+  if(d.cid===cid)return;
+  let P=peers.get(d.cid);
+  if(!P){P={pids:new Set(),params:null,key:''};peers.set(d.cid,P);}
+  P.pids.add(pid);
+  P.n=String(d.n||'anon').slice(0,24);
+  P.ap=String(d.ap||'wisp').slice(0,60);
+  P.as=(d.as>>>0);
+  P.x=+d.x||0;P.y=+d.y||0;P.last=performance.now();
+  const key=P.ap+'|'+P.as;
+  if(P.key!==key){P.params=avatarParams(P.ap,P.as);P.key=key;}
+}
+function onLeave(pid){
+  for(const P of peers.values())P.pids.delete(pid);
+}
+function broadcastPose(){
+  if(!net.up||!me.name)return;
+  const m={cid,n:me.name,ap:me.ap,as:me.as,x:Math.round(player.x),y:Math.round(player.y)};
+  for(const s of net.sendFns){try{s(m);}catch(e){}}
+}
+async function bootNet(){
+  try{
+    // Pinned esm.sh modules (limboverse strategy) — dynamic import so a
+    // blocked/unreachable CDN degrades gracefully to solo. Never unpkg.
+    const results=await Promise.allSettled([
+      import('https://esm.sh/@trystero-p2p/torrent@0.25.4'),
+      import('https://esm.sh/@trystero-p2p/nostr@0.25.4'),
+    ]);
+    const rtcConfig={iceServers:[{urls:['stun:stun.cloudflare.com:3478','stun:stun.l.google.com:19302']}]};
+    // NOTE: limboverse adds TURN (OpenRelay static-auth) here so phones behind
+    // symmetric-NAT / carrier NAT can connect. v0.1 ships STUN-only — hub works
+    // solo regardless; add TURN creds to rtcConfig if phone P2P fails on cellular.
+    const cfgs=[{},
+      {relayConfig:{urls:['wss://yabu.me/v2','wss://relay02.lnfi.network','wss://relay.sigit.io']}}];
+    results.forEach((r,i)=>{
+      if(r.status!=='fulfilled')return;
+      try{
+        const room=r.value.joinRoom({appId:'promptiverse-v01'},ROOM_HUB,Object.assign({rtcConfig},cfgs[i]));
+        const pair=room.makeAction('pv-pose');
+        pair[1]((d,pid)=>onPose(d,pid));
+        room.onPeerLeave(pid=>onLeave(pid));
+        net.sendFns.push(pair[0]);
+      }catch(e){/* one strategy down; the other may still work */}
+    });
+    net.up=net.sendFns.length>0;
+    setNetStatus(net.up?'online':'solo');
+    if(net.up)setInterval(broadcastPose,100);
+  }catch(e){setNetStatus('solo');}
+}
+
+/* ---------------- render ---------------- */
+function drawPortal(p,now,t){
+  const age=clamp((now-p.born)/900,0,1);
+  const s=easeOutBack(age)||0.001;
+  if(Math.abs(p.px-cam.x)>W/2+180||Math.abs(p.py-cam.y)>H/2+180)return; // world-space cull
+  ctx.save();ctx.translate(p.px,p.py);ctx.scale(s,s);
+  const hue=(hashStr(p.id)%360);
+  ctx.globalAlpha=0.95;
+  ctx.strokeStyle='hsla('+hue+',85%,68%,.9)';ctx.lineWidth=5;
+  ctx.beginPath();ctx.arc(0,0,58,0,TAU);ctx.stroke();
+  ctx.strokeStyle='hsla('+hue+',85%,68%,.5)';ctx.lineWidth=2.5;
+  ctx.setLineDash([14,10]);ctx.lineDashOffset=-t*40;
+  ctx.beginPath();ctx.arc(0,0,44,0,TAU);ctx.stroke();
+  ctx.setLineDash([]);
+  const g=ctx.createRadialGradient(0,0,4,0,0,44);
+  g.addColorStop(0,'hsla('+hue+',90%,72%,.85)');
+  g.addColorStop(0.6,'hsla('+((hue+40)%360)+',85%,55%,.25)');
+  g.addColorStop(1,'hsla(0,0%,0%,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,44,0,TAU);ctx.fill();
+  ctx.rotate(t*0.8);
+  ctx.strokeStyle='hsla('+hue+',90%,80%,.55)';ctx.lineWidth=3;
+  ctx.beginPath();ctx.arc(0,0,26,t*0.5,t*0.5+4.2);ctx.stroke();
+  ctx.restore();
+  // floating title, in world coords (render() holds the camera transform)
+  const fy=p.py-92+Math.sin(t*1.8+p.px*0.01)*5;
+  ctx.save();
+  ctx.font='600 15px ui-sans-serif,system-ui,sans-serif';
+  ctx.textAlign='center';
+  const label='✦ '+p.title;
+  const wdt=ctx.measureText(label).width;
+  ctx.fillStyle='rgba(8,10,22,.72)';
+  ctx.fillRect(p.px-wdt/2-10,fy-20,wdt+20,26);
+  ctx.fillStyle='#eef1ff';
+  ctx.fillText(label,p.px,fy);
+  ctx.font='11px ui-monospace,monospace';ctx.fillStyle='rgba(154,163,199,.85)';
+  ctx.fillText('by '+p.by,p.px,fy+36);
+  ctx.restore();
+}
+function render(now,t){
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#070a1c');bg.addColorStop(0.55,'#05060f');bg.addColorStop(1,'#0a0618');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  // nebulae (world-fixed, drawn under the camera transform below)
+  // stars (screen-space parallax)
+  for(const st of stars){
+    const sx=(((st.x*3000-cam.x*st.par)%(W+80))+(W+80))%(W+80)-40;
+    const sy=(((st.y*3000-cam.y*st.par)%(H+80))+(H+80))%(H+80)-40;
+    const tw=0.5+0.5*Math.sin(t*2+st.tw);
+    ctx.fillStyle='rgba(220,228,255,'+(0.25+0.55*tw).toFixed(2)+')';
+    ctx.beginPath();ctx.arc(sx,sy,st.r,0,TAU);ctx.fill();
+  }
+  // ---- world layer: camera centered on the player ----
+  ctx.save();
+  ctx.translate(W/2-cam.x,H/2-cam.y);
+  for(const nb of nebulae){
+    if(Math.abs(nb.x-cam.x)>W/2+nb.r||Math.abs(nb.y-cam.y)>H/2+nb.r)continue;
+    const g=ctx.createRadialGradient(nb.x,nb.y,0,nb.x,nb.y,nb.r);
+    g.addColorStop(0,'hsla('+nb.hue+',70%,40%,'+nb.a+')');
+    g.addColorStop(1,'hsla(0,0%,0%,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(nb.x,nb.y,nb.r,0,TAU);ctx.fill();
+  }
+  // hub core
+  {
+    const pulse=1+0.08*Math.sin(t*2);
+    const g=ctx.createRadialGradient(0,0,0,0,0,120*pulse);
+    g.addColorStop(0,'hsla(265,90%,70%,.28)');g.addColorStop(1,'hsla(0,0%,0%,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,120*pulse,0,TAU);ctx.fill();
+    ctx.strokeStyle='hsla(265,85%,72%,.6)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(0,0,34*pulse,0,TAU);ctx.stroke();
+    ctx.strokeStyle='hsla(265,85%,72%,.3)';
+    ctx.beginPath();ctx.arc(0,0,52*pulse,t, t+5);ctx.stroke();
+    ctx.font='11px ui-monospace,monospace';ctx.textAlign='center';
+    ctx.fillStyle='rgba(170,160,220,.7)';ctx.fillText('✦ the hub',0,74);
+  }
+  // portals
+  for(const p of portals)drawPortal(p,now,t);
+  // peers + name tags
+  for(const P of peers.values()){
+    if(Math.abs(P.x-cam.x)>W/2+120||Math.abs(P.y-cam.y)>H/2+120)continue;
+    if(P.params)drawAvatar(ctx,P.params,P.x,P.y,0.85,t,0.95);
+    ctx.font='600 12px ui-sans-serif,system-ui,sans-serif';ctx.textAlign='center';
+    const wdt=ctx.measureText(P.n).width;
+    ctx.fillStyle='rgba(8,10,22,.7)';ctx.fillRect(P.x-wdt/2-6,P.y-64,wdt+12,20);
+    ctx.fillStyle='#dfe4ff';ctx.fillText(P.n,P.x,P.y-50);
+  }
+  // my trail
+  if(myParams){
+    for(const q of player.trail){
+      if(q.a<=0)continue;
+      ctx.fillStyle='hsla('+myParams.hue+','+myParams.sat+'%,'+myParams.light+'%,'+(q.a*0.25*myParams.trail).toFixed(3)+')';
+      ctx.beginPath();ctx.arc(q.x,q.y,myParams.bodyR*0.7*(q.a),0,TAU);ctx.fill();
+    }
+    drawAvatar(ctx,myParams,player.x,player.y,1,t,1);
+    ctx.font='600 12px ui-sans-serif,system-ui,sans-serif';ctx.textAlign='center';
+    const wdt=ctx.measureText(me.name).width;
+    ctx.fillStyle='rgba(8,10,22,.7)';ctx.fillRect(player.x-wdt/2-6,player.y-64,wdt+12,20);
+    ctx.fillStyle='#fff';ctx.fillText(me.name,player.x,player.y-50);
+  }
+  ctx.restore();
+}
+
+/* ---------------- main loop ---------------- */
+let lastT=performance.now();
+function frame(){
+  const now=performance.now();
+  const dt=clamp((now-lastT)/1000,0,0.05);lastT=now;
+  const t=now/1000;
+  if(me.name){ // only fly once identity exists
+    updatePlayer(dt);
+    // portal crossing
+    for(const p of portals){
+      const dx=player.x-p.px,dy=player.y-p.py;
+      if(dx*dx+dy*dy<40*40){tryDive(p,now);break;}
+    }
+  }
+  // expire silent peers
+  for(const [c,P] of peers){if(now-P.last>6000)peers.delete(c);}
+  $('#peerCount').textContent=String(peers.size);
+  render(now,t);
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- spawn flow ---------------- */
+let pendingSeed=0,previewRAF=null;
+function renderPreview(t){
+  if(typeof t!=='number')t=1.2; // may arrive as an input event
+  const c=$('#avatarPreview'),x=c.getContext('2d');
+  x.clearRect(0,0,300,300);
+  const prompt=$('#promptInput').value||'wisp';
+  const P=avatarParams(prompt,pendingSeed);
+  x.save();x.translate(150,150);x.scale(150/70,150/70);
+  drawAvatar(x,P,0,0,1.15,t,1);
+  x.restore();
+}
+function startPreviewLoop(){
+  const loop=()=>{renderPreview(performance.now()/1000);previewRAF=requestAnimationFrame(loop);};
+  if(previewRAF)cancelAnimationFrame(previewRAF);
+  loop();
+}
+function openSpawn(prefill){
+  if(prefill){$('#nameInput').value=me.name||'';$('#promptInput').value=me.ap||'';pendingSeed=me.as>>>0;}
+  $('#spawn').classList.remove('hidden');
+  startPreviewLoop();
+  renderPreview();
+}
+function closeSpawn(){
+  $('#spawn').classList.add('hidden');
+  if(previewRAF)cancelAnimationFrame(previewRAF);
+  previewRAF=null;
+}
+$('#genBtn').addEventListener('click',()=>{
+  pendingSeed=(Math.random()*0xFFFFFFFF)>>>0;
+  renderPreview();
+  $('#enterBtn').disabled=false;
+});
+$('#remixBtn').addEventListener('click',()=>{
+  pendingSeed=(Math.random()*0xFFFFFFFF)>>>0;
+  renderPreview();
+});
+$('#promptInput').addEventListener('input',renderPreview);
+$('#enterBtn').addEventListener('click',()=>{
+  const name=$('#nameInput').value.trim().slice(0,24)||'wanderer';
+  const ap=$('#promptInput').value.trim().slice(0,60)||'wisp';
+  me={name,ap,as:pendingSeed>>>0};
+  myParams=avatarParams(me.ap,me.as);
+  saveIdentity();closeSpawn();
+  toast('welcome to the hub, '+name+' ✦');
+});
+$('#changeId').addEventListener('click',()=>openSpawn(true));
+
+/* ---------------- portal modal ---------------- */
+function openPortalModal(){$('#portalModal').classList.remove('hidden');$('#pTitle').value='';$('#pUrl').value='';setTimeout(()=>$('#pTitle').focus(),50);}
+function closePortalModal(){$('#portalModal').classList.add('hidden');}
+$('#addPortalBtn').addEventListener('click',openPortalModal);
+$('#pCancelBtn').addEventListener('click',closePortalModal);
+$('#portalModal').addEventListener('click',e=>{if(e.target.id==='portalModal')closePortalModal();});
+function submitPortal(){
+  try{
+    addPortal($('#pTitle').value,$('#pUrl').value,me.name||'anon');
+    closePortalModal();
+  }catch(err){toast(err.message);}
+}
+$('#pAddBtn').addEventListener('click',submitPortal);
+$('#pUrl').addEventListener('keydown',e=>{if(e.key==='Enter')submitPortal();});
+
+/* ---------------- boot ---------------- */
+loadPortals();
+(function(){
+  const saved=loadIdentity();
+  if(saved){
+    me=saved;myParams=avatarParams(me.ap,me.as);
+    $('#spawn').classList.add('hidden');
+  }else{
+    pendingSeed=(Math.random()*0xFFFFFFFF)>>>0;
+    openSpawn(false);
+  }
+})();
+bootNet();
+requestAnimationFrame(frame);
+
+/* debug / test handle */
+window.__pv={
+  portals:()=>portals,
+  addPortal:(t,u)=>addPortal(t,u,me.name||'anon'),
+  teleport:(x,y)=>{player.x=x;player.y=y;player.vx=player.vy=0;},
+  player:()=>({x:player.x,y:player.y}),
+  me:()=>({...me}),
+  peers:()=>peers.size,
+  net:()=>net.up,
+  avatarParams,
+};
+</script>
+</body>
+</html>
