@@ -61,7 +61,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.5 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.6 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -850,6 +850,7 @@ function frame(){
   }
   $('#peerCount').textContent=String(peers.size);
   renderer.render(scene,camera);
+  if(window.__pvProbe&&frameNo%45===0){try{window.__pvProbe.lastRes=window.__pixelProbe();}catch(e){window.__pvProbe.lastRes='probe err';}}
   requestAnimationFrame(frame);
 }
 
@@ -923,6 +924,46 @@ if(/[\?&]debug\b/.test(location.search)){
   dd.style.cssText='position:fixed;left:8px;top:44px;z-index:99;font:10px/1.5 monospace;color:#7CFF9B;background:rgba(0,0,0,.65);padding:6px 8px;border-radius:8px;pointer-events:none;white-space:pre;';
   dd.textContent='debug…';
   document.body.appendChild(dd);
+  /* material capability probe: 4 quads ride with the camera + 1 world sphere.
+     Pixel-readback after render reports what THIS gpu actually rasterizes. */
+  const probe={quads:[],lastRes:'probing…'};
+  {
+    const defs=[
+      ['basic',()=>new THREE.MeshBasicMaterial({color:0xff2222})],
+      ['std',()=>new THREE.MeshStandardMaterial({color:0x22ff22,roughness:0.6})],
+      ['flat',()=>new THREE.MeshStandardMaterial({color:0x2255ff,roughness:0.6,flatShading:true})],
+      ['lamb',()=>new THREE.MeshLambertMaterial({color:0xffff22})],
+    ];
+    const g=new THREE.PlaneGeometry(1.7,1.7);
+    const xs=[-2.4,-0.8,0.8,2.4];
+    defs.forEach(([name,mk],i)=>{
+      const m=new THREE.Mesh(g,mk());
+      m.position.set(xs[i],2.0,-10);
+      camera.add(m);
+      probe.quads.push({name,mesh:m,exp:name==='basic'?'R':name==='std'?'G':name==='flat'?'B':'Y'});
+    });
+    scene.add(camera);
+    const sph=new THREE.Mesh(new THREE.SphereGeometry(2.2,16,12),new THREE.MeshBasicMaterial({color:0xff22ff}));
+    sph.position.set(0,10,285);scene.add(sph);
+    probe.quads.push({name:'sph',mesh:sph,exp:'M'});
+  }
+  function pixelProbe(){
+    const gl=renderer.getContext();
+    const w=gl.drawingBufferWidth,h=gl.drawingBufferHeight;
+    const px=new Uint8Array(4),out=[];
+    for(const q of probe.quads){
+      const v=new THREE.Vector3();q.mesh.getWorldPosition(v);v.project(camera);
+      if(v.z>1||Math.abs(v.x)>1||Math.abs(v.y)>1){out.push(q.name+':offscreen');continue;}
+      const sx=Math.round((v.x*0.5+0.5)*w),sy=Math.round((v.y*0.5+0.5)*h);
+      try{gl.readPixels(sx,sy,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);}catch(e){out.push(q.name+':readfail');continue;}
+      const [r,g,b]=px;
+      // drawn = pixel differs clearly from the near-black background
+      const dBg=Math.max(Math.abs(r-5),Math.abs(g-6),Math.abs(b-15));
+      out.push(q.name+':'+(dBg>40?'DRAWN':'invisible'));
+    }
+    return out.join(' ');
+  }
+  window.__pvProbe=probe;window.__pixelProbe=pixelProbe;
   let lastF=-1,lastT=performance.now();
   setInterval(()=>{
     const f=window.__pv.frames();
@@ -940,6 +981,7 @@ if(/[\?&]debug\b/.test(location.search)){
         s+='\nscene kids '+si.children+' mesh '+si.meshes+'/'+si.visMeshes+' inScene '+si.inScene;
         s+='\ndraws '+si.calls+' tris '+si.tris;
       }catch(e2){s+='\nsceneInfo err';}
+      try{ s+='\nprobe '+window.__pvProbe.lastRes; }catch(e3){}
     }catch(e){s+='\nerr '+String(e.message).slice(0,80);}
     dd.textContent=s;
   },600);
