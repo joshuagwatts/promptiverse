@@ -64,7 +64,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.9 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.10 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -511,7 +511,7 @@ function buildCreature(prompt,seed){
   }
   group.scale.setScalar(1.2); // presence at distance
   group.traverse(o=>{if(o.isMesh||o.isSprite)o.frustumCulled=false;}); // v0.2.8: never cull the creature
-  return {group,update,dispose,params:P,bodyR,eyes};
+  return {group,update,dispose,params:P,bodyR,eyes,bodyMat};
 }
 
 /* ================= portal meshes ================= */
@@ -835,6 +835,13 @@ function frame(){
   }
   $('#peerCount').textContent=String(peers.size);
   renderer.render(scene,camera);
+  if(window.__centerProbe&&frameNo%45===0){
+    try{
+      window.__dbgCenter=window.__centerProbe();
+      const bm=player.creature&&player.creature.bodyMat;
+      if(bm){const c=bm.color;window.__dbgBodyCol=Math.round(c.r*255)+','+Math.round(c.g*255)+','+Math.round(c.b*255);}
+    }catch(e){window.__dbgCenter='err';}
+  }
   requestAnimationFrame(frame);
 }
 
@@ -909,6 +916,16 @@ if(/[\?&]debug\b/.test(location.search)){
   dd.style.cssText='position:fixed;left:8px;top:44px;z-index:99;font:10px/1.5 monospace;color:#7CFF9B;background:rgba(0,0,0,.65);padding:6px 8px;border-radius:8px;pointer-events:none;white-space:pre;';
   dd.textContent='debug…';
   document.body.appendChild(dd);
+  /* center-pixel probe: reports the actual RGB at screen center (where the
+     creature should be) + the creature body color. Ground truth from the GPU. */
+  window.__dbgCenter='?';window.__dbgBodyCol='?';
+  window.__centerProbe=()=>{
+    const gl=renderer.getContext();
+    const w=gl.drawingBufferWidth,h=gl.drawingBufferHeight;
+    const px=new Uint8Array(4);
+    gl.readPixels(Math.round(w/2),Math.round(h/2),1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+    return px[0]+','+px[1]+','+px[2];
+  };
   let lastF=-1,lastT=performance.now();
   setInterval(()=>{
     const f=window.__pv.frames();
@@ -926,6 +943,7 @@ if(/[\?&]debug\b/.test(location.search)){
         s+='\nscene kids '+si.children+' mesh '+si.meshes+'/'+si.visMeshes+' inScene '+si.inScene+' matOk '+si.matOk;
         s+='\ndraws '+si.calls+' tris '+si.tris;
       }catch(e2){s+='\nsceneInfo err';}
+      try{ s+='\ncenterPx '+window.__dbgCenter+' bodyCol '+window.__dbgBodyCol; }catch(e3){}
     }catch(e){s+='\nerr '+String(e.message).slice(0,80);}
     dd.textContent=s;
   },600);
