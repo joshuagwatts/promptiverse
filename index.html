@@ -16,7 +16,7 @@
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);
     color:var(--txt);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
-  #scene{position:fixed;inset:0;display:block;touch-action:none;}
+  #scene{position:fixed;top:0;left:0;display:block;touch-action:none;}
   .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
     background:rgba(4,5,12,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     z-index:20;padding:18px;}
@@ -64,7 +64,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.11 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.12 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -271,6 +271,11 @@ dirLight.position.set(300,500,200);scene.add(dirLight);
 
 function resize(){
   const W=window.innerWidth,H=window.innerHeight;
+  /* v0.2.12: force the canvas element to exactly the visual viewport.
+     CSS 100vh/inset:0 can disagree with innerHeight on mobile when browser
+     chrome shows/hides — that mismatch was offsetting the whole 3D view,
+     putting the scene center in the bottom-right corner. */
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
   renderer.setSize(W,H,false);
   camera.aspect=W/H;camera.updateProjectionMatrix();
   updateFrame();
