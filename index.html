@@ -64,7 +64,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.10 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.11 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -509,7 +509,7 @@ function buildCreature(prompt,seed){
     for(const tr of trail){scene.remove(tr.s);tr.s.material.dispose();}
     trailTex.dispose();
   }
-  group.scale.setScalar(1.2); // presence at distance
+  group.scale.setScalar(2.2); // v0.2.11: big enough to see on portrait phones // presence at distance
   group.traverse(o=>{if(o.isMesh||o.isSprite)o.frustumCulled=false;}); // v0.2.8: never cull the creature
   return {group,update,dispose,params:P,bodyR,eyes,bodyMat};
 }
