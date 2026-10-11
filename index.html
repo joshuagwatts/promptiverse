@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>promptiverse — the hub</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>">
 <style>
@@ -61,7 +64,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.7 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.8 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -526,6 +529,7 @@ function buildCreature(prompt,seed){
     trailTex.dispose();
   }
   group.scale.setScalar(1.2); // presence at distance
+  group.traverse(o=>{if(o.isMesh||o.isSprite)o.frustumCulled=false;}); // v0.2.8: never cull the creature
   return {group,update,dispose,params:P,bodyR,eyes};
 }
 
@@ -894,9 +898,10 @@ window.__pv={
     let meshes=0,vis=0;
     scene.traverse(o=>{if(o.isMesh||o.isSprite){meshes++;if(o.visible)vis++;}});
     const cg=player.creature?player.creature.group:null;
-    let inScene=null,worldOk=null;
-    if(cg){inScene=false;let o=cg;while(o){if(o===scene){inScene=true;break;}o=o.parent;}}
-    return {children:scene.children.length,meshes:meshes,visMeshes:vis,inScene:inScene,
+    let inScene=null,matOk=null;
+    if(cg){inScene=false;let o=cg;while(o){if(o===scene){inScene=true;break;}o=o.parent;}
+      matOk=true;const e=cg.matrixWorld.elements;for(let i=0;i<16;i++){if(!isFinite(e[i])){matOk=false;break;}}}
+    return {children:scene.children.length,meshes:meshes,visMeshes:vis,inScene:inScene,matOk:matOk,
       calls:renderer.info.render.calls,tris:renderer.info.render.triangles};
   },
   snap:()=>{renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');},
@@ -937,7 +942,7 @@ if(/[\?&]debug\b/.test(location.search)){
       s+='\ncreat '+(d.creatureWorld?d.creatureWorld:'NONE')+' ndc '+d.creatureNDC;
       try{
         const si=window.__pv.sceneInfo();
-        s+='\nscene kids '+si.children+' mesh '+si.meshes+'/'+si.visMeshes+' inScene '+si.inScene;
+        s+='\nscene kids '+si.children+' mesh '+si.meshes+'/'+si.visMeshes+' inScene '+si.inScene+' matOk '+si.matOk;
         s+='\ndraws '+si.calls+' tris '+si.tris;
       }catch(e2){s+='\nsceneInfo err';}
     }catch(e){s+='\nerr '+String(e.message).slice(0,80);}
