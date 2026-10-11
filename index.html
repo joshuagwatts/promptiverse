@@ -61,7 +61,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.4 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.2.5 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -348,7 +348,7 @@ const coreGroup=new THREE.Group();scene.add(coreGroup);
 {
   const core=new THREE.Mesh(
     new THREE.IcosahedronGeometry(14,1),
-    new THREE.MeshStandardMaterial({color:0x8f7bff,emissive:0x6a4dff,emissiveIntensity:1.4,roughness:0.4,flatShading:true})
+    new THREE.MeshBasicMaterial({color:0x8f7bff})
   );
   coreGroup.add(core);coreGroup.userData.core=core;
   const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:radialTex('hsla(265,90%,72%,.8)','hsla(265,90%,72%,0)'),transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false}));
@@ -385,12 +385,24 @@ function buildCreature(prompt,seed){
     posA.setXYZ(i,_v1.x*s,_v1.y*s*0.92,_v1.z*s);
   }
   bg.computeVertexNormals();
-  const bodyMat=new THREE.MeshStandardMaterial({color:col,emissive:col.clone().multiplyScalar(0.35),emissiveIntensity:0.7,roughness:0.5,metalness:0.2,flatShading:true});
-  const body=new THREE.Mesh(bg,bodyMat);
+  /* limboverse-style: unlit vertex-colored facets. MeshStandardMaterial with
+     flatShading fails to compile on some mobile GPUs (the whole creature went
+     invisible on-device while portals rendered) — Basic + vertex colors is the
+     proven path (cf. limboverse's wisp). */
+  const bgNI=bg.toNonIndexed();
+  const bp=bgNI.attributes.position, vcol=new Float32Array(bp.count*3);
+  const cTmp=new THREE.Color();
+  for(let f=0;f<bp.count;f+=3){
+    cTmp.copy(col).multiplyScalar(0.82+rnd()*0.36); // per-face jitter = facets
+    for(let k=0;k<3;k++){vcol[(f+k)*3]=cTmp.r;vcol[(f+k)*3+1]=cTmp.g;vcol[(f+k)*3+2]=cTmp.b;}
+  }
+  bgNI.setAttribute('color',new THREE.BufferAttribute(vcol,3));
+  const bodyMat=new THREE.MeshBasicMaterial({vertexColors:true});
+  const body=new THREE.Mesh(bgNI,bodyMat);
   rig.add(body);
 
   /* spikes on a fibonacci sphere, kept off the face (+Z) */
-  const spikeMat=new THREE.MeshStandardMaterial({color:darkCol,emissive:darkCol.clone().multiplyScalar(0.3),emissiveIntensity:0.6,roughness:0.55,flatShading:true});
+  const spikeMat=new THREE.MeshBasicMaterial({color:darkCol});
   const spikes=[];
   const golden=Math.PI*(3-Math.sqrt(5));
   let placed=0,guard=0;
@@ -476,9 +488,9 @@ function buildCreature(prompt,seed){
     const pulse=1+0.045*Math.sin(t*(P.mood==='flicker'?9:2.2)+P.phase)+P.flicker*0.04*Math.sin(t*13+P.phase*2);
     rig.position.y=bobY;
     rig.scale.set(pulse,1-(pulse-1)*0.7,pulse);
-    /* flicker mood: emissive shimmer */
-    if(P.mood==='flicker')bodyMat.emissiveIntensity=0.7+0.5*Math.abs(Math.sin(t*11+P.phase*3));
-    else bodyMat.emissiveIntensity=0.7+0.12*Math.sin(t*2.4+P.phase);
+    /* flicker mood: brightness shimmer (unlit material — pulse the color multiplier) */
+    const shimmer=P.mood==='flicker'?0.72+0.5*Math.abs(Math.sin(t*11+P.phase*3)):0.9+0.1*Math.sin(t*2.4+P.phase);
+    bodyMat.color.setScalar(shimmer);
     /* blink */
     blink.t-=dt;
     if(blink.t<0){blink.phase=0.22;blink.t=2.4+rnd()*3.5;}
