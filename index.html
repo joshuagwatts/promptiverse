@@ -64,7 +64,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.2.12 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.3.0 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -177,6 +177,20 @@ function avatarParams(prompt,seed){
 }
 function creatureExtras(prompt,seed){
   const rnd=mulberry32((xmur3('pv3d|'+String(prompt))()^(seed>>>0)^0x9e3779b9)>>>0);
+  const p=String(prompt||'').toLowerCase();
+  // body plan from prompt keywords — this is what makes "ember fox" and "ghost jellyfish" actually different creatures
+  let plan='orb';
+  const has=(...ws)=>ws.some(w=>new RegExp('\\b'+w+'\\b').test(p));
+  if(has('dragon'))plan='dragon';
+  else if(has('fox','cat','kitten','wolf','dog','pup','puppy','tiger','lion'))plan='fox';
+  else if(has('bunny','rabbit','hare'))plan='bunny';
+  else if(has('bird','owl','eagle','hawk','parrot','crow','raven'))plan='bird';
+  else if(has('bat'))plan='bat';
+  else if(has('fish','shark','whale','dolphin','tuna'))plan='fish';
+  else if(has('jelly','jellyfish'))plan='jelly';
+  else if(has('ghost','spirit','phantom','wraith','specter'))plan='ghost';
+  else if(has('robot','bot','mech','droid','cyborg'))plan='robot';
+  else if(has('octopus','squid','kraken'))plan='octopus';
   return {
     disp:0.18+rnd()*0.3,
     fq:[1.4+rnd()*1.6,1.2+rnd()*1.8,1.4+rnd()*1.6],
@@ -188,7 +202,9 @@ function creatureExtras(prompt,seed){
     eyeSizeJit:0.85+rnd()*0.45,
     trailN:12+Math.floor(rnd()*10),
     glowScale:5.2+rnd()*2.6,
-    horn:rnd()<0.45,          // a pair of long head horns
+    horn:rnd()<0.45||plan==='dragon',   // dragons always get horns
+    plan,
+    accentHue:Math.floor(rnd()*360),    // two-tone accent color
   };
 }
 
@@ -383,12 +399,30 @@ function buildCreature(prompt,seed){
   const rig=new THREE.Group(); // body+spikes+eyes bob/pulse together
   group.add(rig);
 
-  /* body: displaced icosahedron */
-  /* v0.2.9: wisp-pattern body — stock SphereGeometry + plain BasicMaterial.
-     (Custom displaced/non-indexed geometry would not rasterize on-device.) */
-  const bodyMat=new THREE.MeshBasicMaterial({color:col});
-  const body=new THREE.Mesh(new THREE.SphereGeometry(bodyR,28,20),bodyMat);
+  /* body: displaced sphere (indexed geometry + plain BasicMaterial — the safe
+     path the whole debugging saga proved works; the canvas offset was the
+     real culprit, never the geometry) */
+  const accentCol=new THREE.Color('hsl('+E.accentHue+','+Math.min(90,P.sat+10)+'%,'+Math.min(72,P.light+8)+'%)');
+  const bodyGeo=new THREE.SphereGeometry(bodyR,30,22);
+  {
+    const posA=bodyGeo.attributes.position;
+    const v=new THREE.Vector3();
+    for(let i=0;i<posA.count;i++){
+      v.fromBufferAttribute(posA,i);
+      const nz=v.z/bodyR; // damp displacement near the face so eyes never get buried
+      const faceDamp=1-0.75*Math.max(0,Math.min(1,(nz-0.25)/0.75));
+      const k=Math.sin(v.x/bodyR*E.fq[0]+E.s1)*Math.sin(v.y/bodyR*E.fq[1]+E.s2)*Math.sin(v.z/bodyR*E.fq[2]+E.s3);
+      const s=1+E.disp*k*faceDamp;
+      const squash=(E.plan==='fish')?1.35:1; // fish get streamlined
+      posA.setXYZ(i,v.x*s,v.y*s*0.92,v.z*s*squash);
+    }
+    bodyGeo.computeVertexNormals();
+  }
+  const ghostly=E.plan==='ghost';
+  const bodyMat=new THREE.MeshBasicMaterial({color:col,transparent:ghostly,opacity:ghostly?0.72:1});
+  const body=new THREE.Mesh(bodyGeo,bodyMat);
   rig.add(body);
+  const accentMat=new THREE.MeshBasicMaterial({color:accentCol,transparent:ghostly,opacity:ghostly?0.6:1});
 
   /* spikes on a fibonacci sphere, kept off the face (+Z) */
   const spikeMat=new THREE.MeshBasicMaterial({color:darkCol});
@@ -420,20 +454,92 @@ function buildCreature(prompt,seed){
     fin.translateY(len*0.3);
     rig.add(fin);spikes.push(fin);
   }
-  /* optional head horns */
+  /* ---- prompt-driven appendages: this is what makes the avatar YOURS ---- */
+  const apx=(mesh)=>{rig.add(mesh);};
+  /* optional head horns — accent colored, impossible to miss */
   if(E.horn){
     for(const sx of [-1,1]){
-      const len=bodyR*1.5;
-      const horn=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.1,len,6),spikeMat);
-      _v1.set(sx*0.35,0.75,0.55).normalize();
+      const len=bodyR*1.7;
+      const horn=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.12,len,6),accentMat);
+      _v1.set(sx*0.32,0.8,0.5).normalize();
       horn.quaternion.setFromUnitVectors(_up,_v1);
       horn.position.copy(_v1).multiplyScalar(bodyR*0.95);
       horn.translateY(len*0.32);
-      rig.add(horn);
+      apx(horn);
     }
   }
-  /* eyes on the front */
-  const eyes=[];
+  if(E.plan==='fox'||E.plan==='bunny'){
+    // pointed ears on top — BOLD, accent-colored, unmistakable
+    const earLen=bodyR*(E.plan==='bunny'?1.7:1.2);
+    for(const sx of [-1,1]){
+      const ear=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.22,earLen,6),accentMat);
+      _v1.set(sx*0.38,0.9,0.05).normalize();
+      ear.quaternion.setFromUnitVectors(_up,_v1);
+      ear.position.copy(_v1).multiplyScalar(bodyR*0.95);
+      ear.translateY(earLen*0.32);
+      apx(ear);
+    }
+  }
+  if(E.plan==='bird'||E.plan==='bat'||E.plan==='dragon'){
+    // wings — big, angled outward so they read from the front
+    for(const sx of [-1,1]){
+      const wing=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.55,bodyR*2.0,4),accentMat);
+      wing.scale.set(0.3,1,0.7);
+      _v1.set(sx*1.0,0.45,-0.15).normalize();
+      wing.quaternion.setFromUnitVectors(_up,_v1);
+      wing.position.copy(_v1).multiplyScalar(bodyR*0.9);
+      wing.translateY(bodyR*0.55);
+      apx(wing);
+    }
+  }
+  if(E.plan==='bird'){
+    // beak on the face
+    const beak=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.13,bodyR*0.5,6),accentMat);
+    _v1.set(0,-0.05,1).normalize();
+    beak.quaternion.setFromUnitVectors(_up,_v1);
+    beak.position.copy(_v1).multiplyScalar(bodyR*1.02);
+    beak.translateY(bodyR*0.2);
+    // rotate to point forward (+Z)
+    beak.rotateX(Math.PI/2);
+    apx(beak);
+  }
+  if(E.plan==='jelly'||E.plan==='octopus'){
+    // tentacles hanging below
+    const n=E.plan==='octopus'?8:5+Math.floor(rnd()*3);
+    for(let i=0;i<n;i++){
+      const a=(i/n)*TAU+rnd()*0.5;
+      const len=bodyR*(1.2+rnd()*0.9);
+      const t=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.07,len,5),i%2?accentMat:spikeMat);
+      _v1.set(Math.cos(a)*0.55,-1,Math.sin(a)*0.55).normalize();
+      t.quaternion.setFromUnitVectors(_up,_v1.clone().negate());
+      t.position.copy(_v1).multiplyScalar(bodyR*0.8);
+      t.translateY(-len*0.28);
+      apx(t);
+    }
+  }
+  if(E.plan==='robot'){
+    // antenna with glowing tip
+    const stalk=new THREE.Mesh(new THREE.CylinderGeometry(bodyR*0.03,bodyR*0.03,bodyR*0.9,6),spikeMat);
+    stalk.position.set(0,bodyR*1.25,0);
+    apx(stalk);
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(bodyR*0.09,10,8),
+      new THREE.MeshBasicMaterial({color:accentCol}));
+    tip.position.set(0,bodyR*1.72,0);
+    apx(tip);
+    E._antennaTip=tip; // pulse it in update
+  }
+  if(E.plan==='fish'){
+    // big tail fluke
+    const fluke=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.4,bodyR*1.4,4),accentMat);
+    fluke.scale.set(0.25,1,1);
+    _v1.set(0,0.1,-1).normalize();
+    fluke.quaternion.setFromUnitVectors(_up,_v1);
+    fluke.position.copy(_v1).multiplyScalar(bodyR*1.1);
+    fluke.translateY(bodyR*0.4);
+    apx(fluke);
+  }
+  /* eyes on the front — pupils track the direction of travel */
+  const eyes=[],pupils=[];
   const nEyes=P.eyes,spread=bodyR*0.42;
   for(let i=0;i<nEyes;i++){
     const ex=(i-(nEyes-1)/2)*spread;
@@ -447,7 +553,8 @@ function buildCreature(prompt,seed){
     else if(P.eyeStyle==='sleepy')eg.scale.set(1.15,0.5,1);
     eg.position.set(ex,bodyR*0.16,bodyR*1.02);
     eg.userData.baseY=eg.scale.y;
-    rig.add(eg);eyes.push(eg);
+    eg.userData.pupil=pupil;eg.userData.er=er;
+    rig.add(eg);eyes.push(eg);pupils.push(pupil);
   }
   /* glow halo */
   const glow=new THREE.Sprite(new THREE.SpriteMaterial({
@@ -467,7 +574,7 @@ function buildCreature(prompt,seed){
   let trailAcc=0,trailIdx=0;
   const blink={t:2+rnd()*3,phase:0};
 
-  function update(t,dt,worldPos){
+  function update(t,dt,worldPos,vel){
     if(worldPos)group.position.copy(worldPos); // the group does NOT auto-track — sync it every frame
     /* mood motion */
     let bobY=0;
@@ -490,6 +597,24 @@ function buildCreature(prompt,seed){
     }else{
       for(const e of eyes)e.scale.y+=(e.userData.baseY-e.scale.y)*Math.min(1,dt*14);
     }
+    /* pupils drift toward the direction of travel — the creature looks alive */
+    if(vel){
+      const sp=Math.hypot(vel.x,vel.z);
+      if(sp>8){
+        const lx=Math.max(-1,Math.min(1,vel.x/sp))*0.35;
+        const ly=Math.max(-1,Math.min(1,-vel.z/sp))*0.2;
+        for(const e of eyes){
+          const pu=e.userData.pupil,er=e.userData.er;
+          pu.position.x+=(lx*er-pu.position.x)*Math.min(1,dt*8);
+          pu.position.y+=(ly*er-pu.position.y)*Math.min(1,dt*8);
+        }
+      }
+    }
+    /* robot antenna tip pulse */
+    if(E._antennaTip){
+      const s=1+0.35*Math.sin(t*6+P.phase);
+      E._antennaTip.scale.setScalar(s);
+    }
     /* trail emission (world space) */
     trailAcc+=dt;
     if(trailAcc>0.045&&worldPos){
@@ -510,7 +635,7 @@ function buildCreature(prompt,seed){
   }
   function dispose(){
     scene.remove(group);
-    bg.dispose();bodyMat.dispose();spikeMat.dispose();
+    bodyGeo.dispose();bodyMat.dispose();spikeMat.dispose();accentMat.dispose();
     for(const tr of trail){scene.remove(tr.s);tr.s.material.dispose();}
     trailTex.dispose();
   }
@@ -789,6 +914,7 @@ $('#pUrl').addEventListener('keydown',e=>{if(e.key==='Enter')submitPortal();});
 
 /* ================= main loop ================= */
 const _wv=new THREE.Vector3();
+const _wv2=new THREE.Vector3();
 let lastT=performance.now();
 let frameNo=0;
 function frame(){
@@ -819,7 +945,7 @@ function frame(){
     updateCamera(dt);
     if(player.creature){
       _wv.set(player.x,0,player.z);
-      player.creature.update(t,dt,_wv);
+      player.creature.update(t,dt,_wv,player);
     }
   }else{
     /* pre-identity: slow orbit around the hub */
@@ -834,8 +960,13 @@ function frame(){
       peers.delete(c);continue;
     }
     if(P.creature){
+      const px=P.creature.group.position.x,pz=P.creature.group.position.z;
       P.creature.group.position.lerp(_v1.set(P.x,0,P.z),Math.min(1,dt*6));
-      P.creature.update(t,dt,P.creature.group.position);
+      // peer velocity from actual displacement (for pupil tracking)
+      _wv2.set(
+        (P.creature.group.position.x-px)/Math.max(1e-4,dt),0,
+        (P.creature.group.position.z-pz)/Math.max(1e-4,dt));
+      P.creature.update(t,dt,P.creature.group.position,_wv2);
     }
   }
   $('#peerCount').textContent=String(peers.size);
