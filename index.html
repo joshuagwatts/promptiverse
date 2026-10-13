@@ -64,7 +64,7 @@
 <body>
 <canvas id="scene"></canvas>
 
-<div id="hud"><b>promptiverse</b> v0.3.0 · <span id="peerCount">0</span> here</div>
+<div id="hud"><b>promptiverse</b> v0.4.0 · <span id="peerCount">0</span> here</div>
 <div id="netpill">● solo</div>
 <div class="hint">wasd / arrows / drag to fly · drift through a portal to dive</div>
 <button id="addPortalBtn" title="add a portal">+</button>
@@ -205,6 +205,17 @@ function creatureExtras(prompt,seed){
     horn:rnd()<0.45||plan==='dragon',   // dragons always get horns
     plan,
     accentHue:Math.floor(rnd()*360),    // two-tone accent color
+    loco:(()=>{ // locomotion: separate from appendage style (fox=quadruped WITH ears; bird=orb WITH wings)
+      let l='orb';
+      if(has('human','person','man','woman','girl','boy','guy','dude','knight','warrior','hero','heroine',
+             'mech','alien','monster','zombie','ninja','pirate','king','queen','prince','princess',
+             'soldier','mage','wizard','elf','dwarf','orc','goblin','skeleton','vampire','werewolf','cyborg')) l='biped';
+      else if(has('wolf','dog','puppy','cat','kitten','tiger','lion','horse','bear','fox','deer','cow','bull',
+              'pig','sheep','goat','donkey','camel','elephant','rhino','hippo')) l='quad';
+      if(plan==='dragon') l='quad'; // dragons walk on four legs + wings
+      if(plan==='robot') l='biped';
+      return l;
+    })(),
   };
 }
 
@@ -389,7 +400,459 @@ const coreGroup=new THREE.Group();scene.add(coreGroup);
    buildCreature(prompt, seed) -> {group, update(t,dt), params, bodyR}
    Deterministic. Forward = +Z (eyes on +Z). */
 const _v1=new THREE.Vector3(),_v2=new THREE.Vector3(),_q=new THREE.Quaternion(),_up=new THREE.Vector3(0,1,0);
+/* ================= BIPED character rig =================
+   Real character: hips, torso, head, two arms (shoulder+elbow), two legs
+   (hip+knee), optional tail. Procedural walk cycle + idle. */
+function buildBipedCreature(P,E){
+  const rnd=mulberry32((xmur3('pv3d|biped|'+String(P.hue))()^(1)>>>0)>>>0);
+  const bodyR=3.4+(P.bodyR-16)/15*2.4;
+  const col=new THREE.Color('hsl('+P.hue+','+P.sat+'%,'+P.light+'%)');
+  const darkCol=new THREE.Color('hsl('+((P.hue+P.spikeHueJit+360)%360)+','+P.sat+'%,'+Math.max(10,P.light-16)+'%)');
+  const accentCol=new THREE.Color('hsl('+E.accentHue+','+Math.min(90,P.sat+10)+'%,'+Math.min(72,P.light+8)+'%)');
+  const ghostly=E.plan==='ghost';
+  const bodyMat=new THREE.MeshBasicMaterial({color:col,transparent:ghostly,opacity:ghostly?0.75:1});
+  const darkMat=new THREE.MeshBasicMaterial({color:darkCol,transparent:ghostly,opacity:ghostly?0.7:1});
+  const accentMat=new THREE.MeshBasicMaterial({color:accentCol,transparent:ghostly,opacity:ghostly?0.7:1});
+
+  const group=new THREE.Group();
+  const rootG=new THREE.Group(); // bobs with walk
+  group.add(rootG);
+
+  const legLen=bodyR*1.05, torsoLen=bodyR*1.15, headR=bodyR*0.48;
+  const hipW=bodyR*0.34, shoulderW=bodyR*0.52, shoulderY=legLen+torsoLen*0.82;
+
+  // pelvis
+  const pelvis=new THREE.Mesh(new THREE.SphereGeometry(bodyR*0.42,16,12),darkMat);
+  pelvis.scale.set(1.15,0.75,0.9);pelvis.position.y=legLen;
+  rootG.add(pelvis);
+  // torso (capsule, slight taper via scale)
+  const torso=new THREE.Mesh(new THREE.CapsuleGeometry(bodyR*0.4,torsoLen*0.72,6,14),bodyMat);
+  torso.position.y=legLen+torsoLen*0.5;
+  rootG.add(torso);
+  // belly accent
+  const belly=new THREE.Mesh(new THREE.SphereGeometry(bodyR*0.3,14,10),accentMat);
+  belly.scale.set(0.85,1.1,0.55);belly.position.set(0,legLen+torsoLen*0.38,bodyR*0.28);
+  rootG.add(belly);
+
+  // head
+  const headG=new THREE.Group();
+  headG.position.y=legLen+torsoLen+headR*0.75;
+  rootG.add(headG);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(headR,20,16),bodyMat);
+  // slight snout for animal bipeds
+  if(E.plan==='fox'||E.plan==='wolf'){
+    const snout=new THREE.Mesh(new THREE.SphereGeometry(headR*0.45,12,10),darkMat);
+    snout.scale.set(0.9,0.75,1.1);snout.position.set(0,-headR*0.15,headR*0.85);
+    headG.add(snout);
+    const nose=new THREE.Mesh(new THREE.SphereGeometry(headR*0.14,8,6),new THREE.MeshBasicMaterial({color:0x111111}));
+    nose.position.set(0,-headR*0.05,headR*1.28);
+    headG.add(nose);
+  }
+  headG.add(head);
+  // ears / horns on head
+  if(E.plan==='fox'||E.plan==='bunny'||E.plan==='cat'){
+    const earLen=headR*(E.plan==='bunny'?1.6:1.0);
+    for(const sx of [-1,1]){
+      const ear=new THREE.Mesh(new THREE.ConeGeometry(headR*0.28,earLen,6),accentMat);
+      ear.position.set(sx*headR*0.55,headR*0.95,0);
+      ear.rotation.z=-sx*0.22;
+      headG.add(ear);
+    }
+  }
+  if(E.horn){
+    for(const sx of [-1,1]){
+      const horn=new THREE.Mesh(new THREE.ConeGeometry(headR*0.16,headR*1.1,6),accentMat);
+      horn.position.set(sx*headR*0.4,headR*1.0,-headR*0.1);
+      horn.rotation.z=-sx*0.3;horn.rotation.x=-0.25;
+      headG.add(horn);
+    }
+  }
+  if(E.plan==='robot'){
+    const stalk=new THREE.Mesh(new THREE.CylinderGeometry(headR*0.05,headR*0.05,headR*0.7,6),darkMat);
+    stalk.position.y=headR*1.25;headG.add(stalk);
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(headR*0.13,10,8),new THREE.MeshBasicMaterial({color:accentCol}));
+    tip.position.y=headR*1.65;headG.add(tip);
+    E._antennaTip=tip;
+  }
+  // eyes on face
+  const eyes=[];
+  const nEyes=P.eyes,spread=headR*0.62,er=headR*0.26*E.eyeSizeJit;
+  for(let i=0;i<nEyes;i++){
+    const ex=(i-(nEyes-1)/2)*spread;
+    const eg=new THREE.Group();
+    const white=new THREE.Mesh(new THREE.SphereGeometry(er,12,10),new THREE.MeshBasicMaterial({color:0xffffff}));
+    const pupil=new THREE.Mesh(new THREE.SphereGeometry(er*0.45,10,8),new THREE.MeshBasicMaterial({color:0x0a0a14}));
+    pupil.position.z=er*0.72;
+    eg.add(white,pupil);
+    if(P.eyeStyle==='wide')eg.scale.set(1.45,1,1);
+    else if(P.eyeStyle==='sleepy')eg.scale.set(1.15,0.5,1);
+    eg.position.set(ex,headR*0.12,headR*0.92);
+    eg.userData.baseY=eg.scale.y;eg.userData.pupil=pupil;eg.userData.er=er;
+    headG.add(eg);eyes.push(eg);
+  }
+
+  // arms
+  function makeArm(sx){
+    const g=new THREE.Group();
+    g.position.set(sx*shoulderW,shoulderY,0);
+    const upperLen=bodyR*0.55,foreLen=bodyR*0.5;
+    const upper=new THREE.Mesh(new THREE.CapsuleGeometry(bodyR*0.13,upperLen,4,10),bodyMat);
+    upper.position.y=-upperLen/2;g.add(upper);
+    const elbow=new THREE.Group();elbow.position.y=-upperLen;g.add(elbow);
+    const fore=new THREE.Mesh(new THREE.CapsuleGeometry(bodyR*0.11,foreLen,4,10),darkMat);
+    fore.position.y=-foreLen/2;elbow.add(fore);
+    const hand=new THREE.Mesh(new THREE.SphereGeometry(bodyR*0.15,10,8),accentMat);
+    hand.position.y=-foreLen-bodyR*0.1;elbow.add(hand);
+    rootG.add(g);
+    return {g,elbow};
+  }
+  const armL=makeArm(-1),armR=makeArm(1);
+  // legs
+  function makeLeg(sx){
+    const g=new THREE.Group();
+    g.position.set(sx*hipW,legLen,0);
+    const thighLen=bodyR*0.52,shinLen=bodyR*0.5;
+    const thigh=new THREE.Mesh(new THREE.CapsuleGeometry(bodyR*0.16,thighLen,4,10),bodyMat);
+    thigh.position.y=-thighLen/2;g.add(thigh);
+    const knee=new THREE.Group();knee.position.y=-thighLen;g.add(knee);
+    const shin=new THREE.Mesh(new THREE.CapsuleGeometry(bodyR*0.12,shinLen,4,10),darkMat);
+    shin.position.y=-shinLen/2;knee.add(shin);
+    const foot=new THREE.Mesh(new THREE.SphereGeometry(bodyR*0.16,10,8),accentMat);
+    foot.scale.set(0.9,0.6,1.4);foot.position.set(0,-shinLen-bodyR*0.05,bodyR*0.12);
+    knee.add(foot);
+    rootG.add(g);
+    return {g,knee};
+  }
+  const legL=makeLeg(-1),legR=makeLeg(1);
+  // tail (most bipeds get one — wags)
+  let tailG=null;
+  if(E.plan!=='robot'){
+    tailG=new THREE.Group();
+    tailG.position.set(0,legLen*0.95,-bodyR*0.42);
+    const segs=3;
+    let parent=tailG,py=0;
+    for(let i=0;i<segs;i++){
+      const len=bodyR*(0.5-i*0.08);
+      const seg=new THREE.Mesh(new THREE.ConeGeometry(bodyR*(0.12-i*0.025),len,7),i%2?accentMat:darkMat);
+      seg.position.y=-len/2;
+      const j=new THREE.Group();j.position.y=py;j.add(seg);
+      parent.add(j);parent=j;py=-len*0.85;
+    }
+    // point it backward
+    tailG.rotation.x=-1.1;
+    rootG.add(tailG);
+  }
+
+  // glow + trail (shared language with orbs)
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:radialTex('hsla('+P.hue+','+P.sat+'%,'+P.light+'%,.7)','hsla('+P.hue+','+P.sat+'%,'+P.light+'%,0)'),
+    transparent:true,opacity:0.3+0.35*P.glow,blending:THREE.AdditiveBlending,depthWrite:false}));
+  const gs=bodyR*E.glowScale*0.8;glow.scale.set(gs,gs,1);glow.position.y=legLen+torsoLen*0.5;
+  group.add(glow);
+  const trailTex=radialTex('hsla('+P.hue+','+P.sat+'%,'+Math.min(85,P.light+15)+'%,.8)','hsla('+P.hue+','+P.sat+'%,'+P.light+'%,0)');
+  const trail=[];
+  for(let i=0;i<E.trailN;i++){
+    const s=new THREE.Sprite(new THREE.SpriteMaterial({map:trailTex,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+    s.visible=false;scene.add(s);trail.push({s,life:0});
+  }
+  let trailAcc=0,trailIdx=0;
+  const blink={t:2+rnd()*3,phase:0};
+  const totalH=legLen+torsoLen+headR*1.6;
+
+  function update(t,dt,worldPos,vel){
+    if(worldPos)group.position.copy(worldPos);
+    const sp=vel?Math.hypot(vel.x,vel.z):0;
+    const moveAmt=Math.min(1,sp/70);
+    // walk cycle
+    const wp=t*(5+sp*0.025);
+    const sw=Math.sin(wp)*0.6*moveAmt;
+    legL.g.rotation.x=sw;legR.g.rotation.x=-sw;
+    legL.knee.rotation.x=Math.max(0,-Math.sin(wp-0.6))*1.0*moveAmt;
+    legR.knee.rotation.x=Math.max(0,Math.sin(wp-0.6))*1.0*moveAmt;
+    armL.g.rotation.x=-sw*0.8;armR.g.rotation.x=sw*0.8;
+    armL.elbow.rotation.x=-0.25-0.3*moveAmt;armR.elbow.rotation.x=-0.25-0.3*moveAmt;
+    // bob + lean
+    rootG.position.y=Math.abs(Math.cos(wp))*bodyR*0.14*moveAmt;
+    rootG.rotation.x=moveAmt*0.08;
+    // idle: breathe + sway + look
+    const br=1+0.025*Math.sin(t*2.1+P.phase);
+    torso.scale.set(1,br,1);
+    if(moveAmt<0.15){
+      armL.g.rotation.z=0.12+0.06*Math.sin(t*1.3+P.phase);
+      armR.g.rotation.z=-0.12-0.06*Math.sin(t*1.3+P.phase+1);
+      headG.rotation.y=0.3*Math.sin(t*0.5+P.phase);
+    }else{headG.rotation.y*=0.9;}
+    // tail wag
+    if(tailG)tailG.rotation.y=0.5*Math.sin(t*(3+sp*0.03)+P.phase);
+    // pupils track travel
+    if(vel&&sp>8){
+      const lx=Math.max(-1,Math.min(1,vel.x/sp))*0.35,ly=Math.max(-1,Math.min(1,-vel.z/sp))*0.2;
+      for(const e of eyes){
+        const pu=e.userData.pupil,er2=e.userData.er;
+        pu.position.x+=(lx*er2-pu.position.x)*Math.min(1,dt*8);
+        pu.position.y+=(ly*er2-pu.position.y)*Math.min(1,dt*8);
+      }
+    }
+    if(E._antennaTip)E._antennaTip.scale.setScalar(1+0.35*Math.sin(t*6+P.phase));
+    // blink
+    blink.t-=dt;
+    if(blink.t<0){blink.phase=0.22;blink.t=2.4+rnd()*3.5;}
+    if(blink.phase>0){
+      blink.phase-=dt;
+      const k=Math.max(0.08,blink.phase/0.22);
+      for(const e of eyes)e.scale.y=e.userData.baseY*k;
+    }else for(const e of eyes)e.scale.y+=(e.userData.baseY-e.scale.y)*Math.min(1,dt*14);
+    // trail
+    trailAcc+=dt;
+    if(trailAcc>0.05&&worldPos&&sp>40){
+      trailAcc=0;
+      const tr=trail[trailIdx++%trail.length];
+      tr.s.position.copy(worldPos);tr.s.position.y+=legLen*0.5;
+      tr.life=1;tr.s.visible=true;
+      const sc=bodyR*(0.8+0.4*rnd());tr.s.scale.set(sc,sc,1);
+    }
+    for(const tr of trail){
+      if(tr.life<=0)continue;
+      tr.life-=dt*1.6;
+      if(tr.life<=0){tr.s.visible=false;continue;}
+      tr.s.material.opacity=tr.life*0.3*P.trail;
+      const sc=tr.s.scale.x*(1-dt*0.7);tr.s.scale.set(sc,sc,1);
+    }
+  }
+  function dispose(){
+    scene.remove(group);
+    bodyMat.dispose();darkMat.dispose();accentMat.dispose();trailTex.dispose();
+    for(const tr of trail){scene.remove(tr.s);tr.s.material.dispose();}
+    group.traverse(o=>{if(o.isMesh)o.geometry.dispose();});
+  }
+  group.scale.setScalar(2.0);
+  group.traverse(o=>{if(o.isMesh||o.isSprite)o.frustumCulled=false;});
+  return {group,update,dispose,params:P,bodyR:totalH/3,eyes,bodyMat};
+}
+
+/* ================= QUADRUPED character rig =================
+   Four legs, horizontal torso, head at front, tail at back. Diagonal-gait walk. */
+function buildQuadCreature(P,E){
+  const rnd=mulberry32((xmur3('pv3d|quad|'+String(P.hue))()^(2)>>>0)>>>0);
+  const bodyR=3.4+(P.bodyR-16)/15*2.4;
+  const col=new THREE.Color('hsl('+P.hue+','+P.sat+'%,'+P.light+'%)');
+  const darkCol=new THREE.Color('hsl('+((P.hue+P.spikeHueJit+360)%360)+','+P.sat+'%,'+Math.max(10,P.light-16)+'%)');
+  const accentCol=new THREE.Color('hsl('+E.accentHue+','+Math.min(90,P.sat+10)+'%,'+Math.min(72,P.light+8)+'%)');
+  const ghostly=E.plan==='ghost';
+  const bodyMat=new THREE.MeshBasicMaterial({color:col,transparent:ghostly,opacity:ghostly?0.75:1});
+  const darkMat=new THREE.MeshBasicMaterial({color:darkCol,transparent:ghostly,opacity:ghostly?0.7:1});
+  const accentMat=new THREE.MeshBasicMaterial({color:accentCol,transparent:ghostly,opacity:ghostly?0.7:1});
+
+  const group=new THREE.Group();
+  const rootG=new THREE.Group();
+  group.add(rootG);
+
+  const legLen=bodyR*0.95, bodyLen=bodyR*2.2, bodyW=bodyR*0.85;
+  const hipY=legLen;
+
+  // torso — horizontal capsule
+  const torso=new THREE.Mesh(new THREE.CapsuleGeometry(bodyW*0.5,bodyLen*0.7,6,14),bodyMat);
+  torso.rotation.x=Math.PI/2;
+  torso.position.y=hipY;
+  rootG.add(torso);
+  // back ridge (accent)
+  const ridge=new THREE.Mesh(new THREE.CapsuleGeometry(bodyW*0.18,bodyLen*0.6,4,8),accentMat);
+  ridge.rotation.x=Math.PI/2;ridge.position.set(0,hipY+bodyW*0.42,0);
+  rootG.add(ridge);
+
+  // head at front (+Z)
+  const headG=new THREE.Group();
+  headG.position.set(0,hipY+bodyR*0.25,bodyLen*0.62);
+  rootG.add(headG);
+  const headR=bodyR*0.52;
+  const head=new THREE.Mesh(new THREE.SphereGeometry(headR,18,14),bodyMat);
+  headG.add(head);
+  // snout
+  const snout=new THREE.Mesh(new THREE.SphereGeometry(headR*0.5,12,10),darkMat);
+  snout.scale.set(0.85,0.7,1.15);snout.position.set(0,-headR*0.18,headR*0.8);
+  headG.add(snout);
+  const nose=new THREE.Mesh(new THREE.SphereGeometry(headR*0.13,8,6),new THREE.MeshBasicMaterial({color:0x111111}));
+  nose.position.set(0,-headR*0.08,headR*1.28);
+  headG.add(nose);
+  // ears
+  if(E.plan==='fox'||E.plan==='cat'||E.plan==='wolf'||E.plan==='dog'){
+    for(const sx of [-1,1]){
+      const ear=new THREE.Mesh(new THREE.ConeGeometry(headR*0.3,headR*1.1,6),accentMat);
+      ear.position.set(sx*headR*0.55,headR*0.95,-headR*0.1);
+      ear.rotation.z=-sx*0.25;
+      headG.add(ear);
+    }
+  }
+  if(E.horn){
+    for(const sx of [-1,1]){
+      const horn=new THREE.Mesh(new THREE.ConeGeometry(headR*0.16,headR*1.2,6),accentMat);
+      horn.position.set(sx*headR*0.4,headR*1.0,-headR*0.2);
+      horn.rotation.z=-sx*0.3;horn.rotation.x=-0.4;
+      headG.add(horn);
+    }
+  }
+  // dragon wings on back
+  if(E.plan==='dragon'){
+    for(const sx of [-1,1]){
+      const wing=new THREE.Mesh(new THREE.ConeGeometry(bodyR*0.55,bodyR*2.0,4),accentMat);
+      wing.scale.set(0.3,1,0.7);
+      wing.position.set(sx*bodyR*0.7,hipY+bodyR*0.7,-bodyR*0.2);
+      wing.rotation.z=sx*0.7;wing.rotation.x=-0.3;
+      rootG.add(wing);
+      // store for flap
+      wing.userData.sx=sx;
+      (E._wings=E._wings||[]).push(wing);
+    }
+  }
+  // eyes
+  const eyes=[];
+  const nEyes=P.eyes,spread=headR*0.66,er=headR*0.28*E.eyeSizeJit;
+  for(let i=0;i<nEyes;i++){
+    const ex=(i-(nEyes-1)/2)*spread;
+    const eg=new THREE.Group();
+    const white=new THREE.Mesh(new THREE.SphereGeometry(er,12,10),new THREE.MeshBasicMaterial({color:0xffffff}));
+    const pupil=new THREE.Mesh(new THREE.SphereGeometry(er*0.45,10,8),new THREE.MeshBasicMaterial({color:0x0a0a14}));
+    pupil.position.z=er*0.72;
+    eg.add(white,pupil);
+    if(P.eyeStyle==='wide')eg.scale.set(1.45,1,1);
+    else if(P.eyeStyle==='sleepy')eg.scale.set(1.15,0.5,1);
+    eg.position.set(ex,headR*0.18,headR*0.88);
+    eg.userData.baseY=eg.scale.y;eg.userData.pupil=pupil;eg.userData.er=er;
+    headG.add(eg);eyes.push(eg);
+  }
+
+  // four legs
+  function makeLeg(sx,sz){
+    const g=new THREE.Group();
+    g.position.set(sx*bodyW*0.42,hipY,sz*bodyLen*0.36);
+    const upperLen=bodyR*0.5,lowerLen=bodyR*0.45;
+    const upper=new THREE.Mesh(new THREE.CapsuleGeometry(bodyR*0.15,upperLen,4,10),bodyMat);
+    upper.position.y=-upperLen/2;g.add(upper);
+    const knee=new THREE.Group();knee.position.y=-upperLen;g.add(knee);
+    const lower=new THREE.Mesh(new THREE.CapsuleGeometry(bodyR*0.11,lowerLen,4,10),darkMat);
+    lower.position.y=-lowerLen/2;knee.add(lower);
+    const paw=new THREE.Mesh(new THREE.SphereGeometry(bodyR*0.15,10,8),accentMat);
+    paw.scale.set(1,0.7,1.3);paw.position.set(0,-lowerLen-bodyR*0.04,bodyR*0.06);
+    knee.add(paw);
+    rootG.add(g);
+    return {g,knee};
+  }
+  const legFL=makeLeg(-1,1),legFR=makeLeg(1,1),legBL=makeLeg(-1,-1),legBR=makeLeg(1,-1);
+
+  // tail — wagging, longer for foxes
+  const tailG=new THREE.Group();
+  tailG.position.set(0,hipY+bodyR*0.15,-bodyLen*0.55);
+  {
+    const segs=E.plan==='fox'?4:3;
+    let parent=tailG,py=0;
+    for(let i=0;i<segs;i++){
+      const len=bodyR*(0.55-i*0.07)*(E.plan==='fox'?1.3:1);
+      const seg=new THREE.Mesh(new THREE.ConeGeometry(bodyR*(0.13-i*0.025),len,7),i===segs-1?accentMat:darkMat);
+      seg.position.y=-len/2;
+      const j=new THREE.Group();j.position.y=py;j.add(seg);
+      parent.add(j);parent=j;py=-len*0.85;
+    }
+    tailG.rotation.x=0.9; // point backward-up
+    // fluffy fox tail tip
+    if(E.plan==='fox'){
+      const tip=new THREE.Mesh(new THREE.SphereGeometry(bodyR*0.22,10,8),accentMat);
+      tip.position.y=py-bodyR*0.15;parent.add(tip);
+    }
+  }
+  rootG.add(tailG);
+
+  // glow + trail
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:radialTex('hsla('+P.hue+','+P.sat+'%,'+P.light+'%,.7)','hsla('+P.hue+','+P.sat+'%,'+P.light+'%,0)'),
+    transparent:true,opacity:0.3+0.35*P.glow,blending:THREE.AdditiveBlending,depthWrite:false}));
+  const gs=bodyR*E.glowScale;glow.scale.set(gs,gs,1);glow.position.y=hipY;
+  group.add(glow);
+  const trailTex=radialTex('hsla('+P.hue+','+P.sat+'%,'+Math.min(85,P.light+15)+'%,.8)','hsla('+P.hue+','+P.sat+'%,'+P.light+'%,0)');
+  const trail=[];
+  for(let i=0;i<E.trailN;i++){
+    const s=new THREE.Sprite(new THREE.SpriteMaterial({map:trailTex,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+    s.visible=false;scene.add(s);trail.push({s,life:0});
+  }
+  let trailAcc=0,trailIdx=0;
+  const blink={t:2+rnd()*3,phase:0};
+
+  function update(t,dt,worldPos,vel){
+    if(worldPos)group.position.copy(worldPos);
+    const sp=vel?Math.hypot(vel.x,vel.z):0;
+    const moveAmt=Math.min(1,sp/70);
+    // diagonal gait: FL+BR together, FR+BL together
+    const wp=t*(5+sp*0.03);
+    const a=Math.sin(wp)*0.55*moveAmt, b=Math.sin(wp+Math.PI)*0.55*moveAmt;
+    legFL.g.rotation.x=a;legBR.g.rotation.x=a;
+    legFR.g.rotation.x=b;legBL.g.rotation.x=b;
+    for(const [leg,ph] of [[legFL,0],[legBR,0],[legFR,Math.PI],[legBL,Math.PI]]){
+      leg.knee.rotation.x=Math.max(0,-Math.sin(wp+ph-0.6))*0.9*moveAmt;
+    }
+    // body bob + sway
+    rootG.position.y=Math.abs(Math.sin(wp))*bodyR*0.1*moveAmt;
+    rootG.rotation.z=0.04*Math.sin(wp)*moveAmt;
+    // head bob + look
+    headG.position.y=hipY+bodyR*0.25+0.06*bodyR*Math.sin(wp*2)*moveAmt;
+    if(moveAmt<0.15)headG.rotation.y=0.35*Math.sin(t*0.45+P.phase);
+    // tail wag
+    tailG.rotation.y=0.45*Math.sin(t*(2.5+sp*0.03)+P.phase);
+    // dragon wing flap
+    if(E._wings)for(const w of E._wings){
+      w.rotation.z=w.userData.sx*(0.7+0.35*Math.sin(t*(2+moveAmt*4)+P.phase));
+    }
+    // pupils
+    if(vel&&sp>8){
+      const lx=Math.max(-1,Math.min(1,vel.x/sp))*0.35,ly=Math.max(-1,Math.min(1,-vel.z/sp))*0.2;
+      for(const e of eyes){
+        const pu=e.userData.pupil,er2=e.userData.er;
+        pu.position.x+=(lx*er2-pu.position.x)*Math.min(1,dt*8);
+        pu.position.y+=(ly*er2-pu.position.y)*Math.min(1,dt*8);
+      }
+    }
+    // blink
+    blink.t-=dt;
+    if(blink.t<0){blink.phase=0.22;blink.t=2.4+rnd()*3.5;}
+    if(blink.phase>0){
+      blink.phase-=dt;
+      const k=Math.max(0.08,blink.phase/0.22);
+      for(const e of eyes)e.scale.y=e.userData.baseY*k;
+    }else for(const e of eyes)e.scale.y+=(e.userData.baseY-e.scale.y)*Math.min(1,dt*14);
+    // trail
+    trailAcc+=dt;
+    if(trailAcc>0.05&&worldPos&&sp>40){
+      trailAcc=0;
+      const tr=trail[trailIdx++%trail.length];
+      tr.s.position.copy(worldPos);tr.s.position.y+=hipY*0.6;
+      tr.life=1;tr.s.visible=true;
+      const sc=bodyR*(0.8+0.4*rnd());tr.s.scale.set(sc,sc,1);
+    }
+    for(const tr of trail){
+      if(tr.life<=0)continue;
+      tr.life-=dt*1.6;
+      if(tr.life<=0){tr.s.visible=false;continue;}
+      tr.s.material.opacity=tr.life*0.3*P.trail;
+      const sc=tr.s.scale.x*(1-dt*0.7);tr.s.scale.set(sc,sc,1);
+    }
+  }
+  function dispose(){
+    scene.remove(group);
+    bodyMat.dispose();darkMat.dispose();accentMat.dispose();trailTex.dispose();
+    for(const tr of trail){scene.remove(tr.s);tr.s.material.dispose();}
+    group.traverse(o=>{if(o.isMesh)o.geometry.dispose();});
+  }
+  group.scale.setScalar(2.0);
+  group.traverse(o=>{if(o.isMesh||o.isSprite)o.frustumCulled=false;});
+  return {group,update,dispose,params:P,bodyR:bodyLen/2.5,eyes,bodyMat};
+}
+
+/* dispatcher: prompt picks the body — real characters, not just orbs */
 function buildCreature(prompt,seed){
+  const P=avatarParams(prompt,seed),E0=creatureExtras(prompt,seed);
+  if(E0.loco==='biped')return buildBipedCreature(P,E0);
+  if(E0.loco==='quad')return buildQuadCreature(P,E0);
+  return buildOrbCreature(prompt,seed);
+}
+function buildOrbCreature(prompt,seed){
   const P=avatarParams(prompt,seed),E=creatureExtras(prompt,seed);
   const rnd=mulberry32((xmur3('pv3d|parts|'+String(prompt))()^(seed>>>0))>>>0);
   const bodyR=3.4+(P.bodyR-16)/15*2.4;
